@@ -1,0 +1,18 @@
+{
+  "name": "techdeck-workflow",
+  "version": "0.1.0",
+  "description": "話者なしで読者が単体で理解できる技術解説スライド（PPTX）を作るためのフェーズゲート型ワークフロー。調査・構成・バッチ制作・レビューループ・最終レビューを、builder / reviewer エージェントと python-pptx ベースのツールキットで回す。Windows + PowerPoint 必須。",
+  "author": {
+    "name": "TODO: 公開前に自分の名前に置き換える"
+  },
+  "keywords": [
+    "pptx",
+    "powerpoint",
+    "slides",
+    "presentation",
+    "technical-writing",
+    "python-pptx",
+    "ooxml",
+    "japanese"
+  ]
+}

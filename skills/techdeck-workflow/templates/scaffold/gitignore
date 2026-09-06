@@ -1,0 +1,13 @@
+# deckkit save_backup() drops these next to the deck on every batch edit
+slides/*.bak-*.pptx
+
+# render output (regenerate with render_deck.py)
+output/pdf/
+**/png/
+
+# PowerPoint lock files
+~$*.pptx
+
+__pycache__/
+*.pyc
+.DS_Store

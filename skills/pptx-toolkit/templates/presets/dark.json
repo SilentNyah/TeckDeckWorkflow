@@ -1,0 +1,72 @@
+{
+  "_preset": "dark",
+  "_note": "深い紫みの黒を地にしたダークテーマ。技術資料・コード断片の多い資料向け。本文 15.5:1 / muted 6.5:1 / dim 3.6:1（dim は意図的に沈めている）。",
+  "language": "ja",
+  "geometry": {
+    "width_in": 10,
+    "height_in": 5.625
+  },
+  "fonts": {
+    "sans": "Calibri",
+    "mono": "Courier New",
+    "cjk": "Yu Gothic",
+    "display": "Arial"
+  },
+  "palette": {
+    "bg": "151124",
+    "bg_alt": "100B21",
+    "card": "1E1838",
+    "card_alt": "241D3C",
+    "panel": "2E2650",
+    "panel_alt": "2A2440",
+    "rule": "3C3463",
+    "rule_alt": "322855",
+    "text": "ECEAF7",
+    "text_bright": "F4F0FF",
+    "muted": "9C95BC",
+    "muted_alt": "A99CC7",
+    "muted_soft": "D6CFF0",
+    "dim": "6E6A8A",
+    "dim_alt": "76719B",
+    "accent_green": "34E2B0",
+    "accent_amber": "FFB454",
+    "accent_purple": "B89CFF",
+    "accent_pink": "FF7597",
+    "shadow": "000000",
+    "deep": "1B1630",
+    "deep_alt": "0E1330",
+    "highlight": "4A3A12"
+  },
+  "code_theme": "vscode-dark-plus",
+  "code_palette": {
+    "default": "D4D4D4",
+    "keyword": "569CD6",
+    "function": "DCDCAA",
+    "type": "4EC9B0",
+    "string": "CE9178",
+    "number": "B5CEA8",
+    "variable": "9CDCFE",
+    "control": "C586C0",
+    "comment": "6A9955",
+    "highlight": "F78C6C"
+  },
+  "conventions": [
+    "バッジ: 要点=accent_amber / 注意=accent_pink / 次章=accent_green",
+    "章 kicker の色は章ごとに変える",
+    "出典はスライド右下に SRC-NNN で表示する",
+    "完全版コードへの参照はスライド左下に examples/... で表示する",
+    "コード断片は mono。本文中の識別子・API名も mono",
+    "和文を含む run には fonts.cjk を渡す（deckkit は latin/ea/cs に同じ値を書くため、sans のままだと和文が環境依存のフォント置換になる）",
+    "枠（角丸長方形）とその中の文字は別シェイプ。移動時は両方動かす",
+    "card は bg より一段明るい。rule は両者の中間",
+    "ハイライト（蛍光ペン）は palette.highlight を R(..., hl=...) に渡す。**1スライド1箇所まで。** 最も強い強調手段であり、複数使うと効かなくなる"
+  ],
+  "source_notation": "SRC-NNN",
+  "id_prefixes": {
+    "finding": "FINDING",
+    "source": "SRC",
+    "decision": "DEC",
+    "question": "OQ",
+    "comment": "CMT"
+  }
+}

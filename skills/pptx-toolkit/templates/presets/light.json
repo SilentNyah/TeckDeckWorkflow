@@ -1,0 +1,72 @@
+{
+  "_preset": "light",
+  "_note": "印刷・明るい環境向けのライトテーマ。bg は純白を避けて FBFAFD（純白だと shadow が消え、目も疲れる）。accent は dark と共有できない ─ 34E2B0 は白地で約1.5:1 で読めないため、すべて再選定した（本文 17.1:1 / muted 6.9:1 / accent は 5.1〜7.0:1）。",
+  "language": "ja",
+  "geometry": {
+    "width_in": 10,
+    "height_in": 5.625
+  },
+  "fonts": {
+    "sans": "Calibri",
+    "mono": "Courier New",
+    "cjk": "Yu Gothic",
+    "display": "Arial"
+  },
+  "palette": {
+    "bg": "FBFAFD",
+    "bg_alt": "FFFFFF",
+    "card": "F1EFF8",
+    "card_alt": "E9E6F3",
+    "panel": "E4E0F0",
+    "panel_alt": "EDEAF6",
+    "rule": "C9C6DA",
+    "rule_alt": "D8D5E6",
+    "text": "1B1524",
+    "text_bright": "0D0913",
+    "muted": "5A5375",
+    "muted_alt": "4C4665",
+    "muted_soft": "6D6689",
+    "dim": "8A84A3",
+    "dim_alt": "7C7695",
+    "accent_green": "0B7A57",
+    "accent_amber": "8A5200",
+    "accent_purple": "6B46C1",
+    "accent_pink": "C2185B",
+    "shadow": "000000",
+    "deep": "F5F3FA",
+    "deep_alt": "EFEDF7",
+    "highlight": "FFEFA8"
+  },
+  "code_theme": "vscode-light-plus",
+  "code_palette": {
+    "default": "000000",
+    "keyword": "0000FF",
+    "function": "795E26",
+    "type": "267F99",
+    "string": "A31515",
+    "number": "098658",
+    "variable": "001080",
+    "control": "AF00DB",
+    "comment": "008000",
+    "highlight": "B5200D"
+  },
+  "conventions": [
+    "バッジ: 要点=accent_amber / 注意=accent_pink / 次章=accent_green",
+    "章 kicker の色は章ごとに変える",
+    "出典はスライド右下に SRC-NNN で表示する",
+    "完全版コードへの参照はスライド左下に examples/... で表示する",
+    "コード断片は mono。本文中の識別子・API名も mono",
+    "和文を含む run には fonts.cjk を渡す（deckkit は latin/ea/cs に同じ値を書くため、sans のままだと和文が環境依存のフォント置換になる）",
+    "枠（角丸長方形）とその中の文字は別シェイプ。移動時は両方動かす",
+    "card は bg より一段暗い（dark プリセットとは明暗の関係が逆になる）",
+    "ハイライト（蛍光ペン）は palette.highlight を R(..., hl=...) に渡す。**1スライド1箇所まで。** 最も強い強調手段であり、複数使うと効かなくなる"
+  ],
+  "source_notation": "SRC-NNN",
+  "id_prefixes": {
+    "finding": "FINDING",
+    "source": "SRC",
+    "decision": "DEC",
+    "question": "OQ",
+    "comment": "CMT"
+  }
+}
