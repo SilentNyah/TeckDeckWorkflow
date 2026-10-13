@@ -80,6 +80,11 @@ but only commented slides. Two intake modes:
   重要語は文中で1〜3語強調する。規定は `reference/visual-design.md`。
 * 技術的に誤ったフィードバックやコメントは、そのまま反映せず、根拠と理由を報告する。
 * `slides/review-input/` 配下を編集しない。ラウンド番号を再利用しない。
+* **仕様は 5 つの面にある**（storyboard / `review_state.md` の規則 / 発注文 / 図の生成器 /
+  `source_index.md`）。**1 つ直したら同じ編集で全部を掃く。** 訂正は本文を書き換え、注記の追記で
+  済ませない（`workflows/phase3-batch-build.md`「仕様面」）。
+* **発注文に出典の本文を書かない。** 「storyboard の `### Sources` に従え」「索引の `SRC-NNN` を読め」
+  と参照だけを書く。レビュー担当への誤った転記は捕まえる側を壊す（同「発注文の契約」）。
 * 各 workflow の末尾で停止して報告する。フェーズを自動で進めない。
 
 The push-back rule is load-bearing: when a comment is technically wrong, **do not apply it**.
@@ -171,6 +176,14 @@ Any read / edit / render / comment-extraction on a `.pptx` → use the **`pptx-t
   **Never run two renders concurrently:** COM attaches to the running instance, so the
   first `app.Quit()` kills the other export.
 * Editable diagram sources live in `assets/diagrams/`; update them whenever the diagram changes.
+* **State files are written through `scripts/statekit.py`**, not through ad-hoc one-off scripts:
+  ledger rows in `review_state.md`, storyboard fields, `### Sources` rows, `source_index.md`
+  appends, review-record appends. It asserts section boundaries and exactly-one match and keeps
+  the file's line endings. `statekit.py next-id SRC` / `dupes` guard numbering.
+* **Renumbering after a split goes through `scripts/renumber.py --insert-after N`** (dry-run first).
+  It rewrites page references, prev/next links, chapter maps, appendix page lists, the progress
+  table and carried-forward origins, and lists the hits on `APPROVED` slides separately so the user
+  can be asked once.
 * **図形・アイコン・コードのハイライトは自前で組まない。**
   `deckkit.shape()`（プリセット図形すべて）、`pictogram.draw()`（33種）、
   `codehl.code_block()`（`code_palette` を適用）を使う。
@@ -203,6 +216,8 @@ do not fork the set wholesale.
 | `templates/` | creating any new record: storyboard entry, source, finding, review report, comment import, TASK.md |
 | `templates/scaffold/` | Phase 0 file templates (`{{SKILL_DIR}}` / `{{PROJECT_NAME}}` are substituted by `scripts/init_project.py`) |
 | `scripts/init_project.py` | Phase 0: create the tree, state-file stubs and the first deck |
+| `scripts/statekit.py` | any write to `review_state.md` / `storyboard.md` / `source_index.md` / `slides/reviews/`; `next-id`, `dupes` |
+| `scripts/renumber.py` | a split or insertion changed slide numbers |
 | `pptx-toolkit` `templates/presets/` | `dark` / `light` colour presets — the starting point for a new project |
 
 ## 12. Quality loop agents

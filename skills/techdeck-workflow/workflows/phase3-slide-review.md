@@ -29,7 +29,12 @@
    `[LAYOUT]`（はみ出し・重なり＝壊れ）と混同しない。
 3. 対象スライドを `reference/review-rubric.md` に照らして再確認する。
 4. 状態を `REVISION_REQUIRED` にする。
+   **承認済みスライドへの指摘**は、ユーザー本人の指摘ならそのまま修正対象にする。
+   他スライドの作業中に見つけた承認済みスライドの不整合は、修正せず
+   `## Approved slide change requests` に `ASC-NNN` で積む（`reference/state-schema.md`）。
 5. 指名されたスライドだけを修正する。
+   フィードバックに答えて**オーケストレータが文を書く**ときは、`phase3-batch-build.md` の
+   「指摘の反映」に従う（`### Spec changes` の 6 点検、字数に収めるために詰めた文は差分レビューへ）。
 6. 図を修正した場合は編集可能ソースも更新する。
 7. 再レンダリングして表示を確認する。
 8. **評価パスを回す。** 修正したスライドを `reference/review-rubric.md` で採点し、
