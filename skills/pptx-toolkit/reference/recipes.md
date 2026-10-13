@@ -39,12 +39,17 @@ sys.path.insert(0, r'<pptx-toolkit>/scripts')
 from pptx import Presentation
 from deckkit import (R, set_runs, set_para, shape_by_id, el_by_id, set_xfrm,
                      rrect, textbox, arrow, connector, move_before, save_backup,
-                     load_profile, use_defaults)
+                     load_profile, use_defaults,
+                     slide_fingerprints, assert_untouched, save_replace)
 
 DECK = r'<project>\slides\deck.pptx'
+TARGET = {16, 20, 22}                 # このスクリプトが触ってよい位置（1-based）
 save_backup(DECK)                     # ← 最初に必ず
+BEFORE = slide_fingerprints(DECK)     # ← 守り 4 の「前」
 prs = Presentation(DECK)
-S = lambda n: prs.slides[n - 1]       # 1-based で書けるように
+def S(n):                             # 1-based。対象外なら止まる（守り 1）
+    assert n in TARGET, 'slide %d is outside TARGET' % n
+    return prs.slides[n - 1]
 
 PAL = load_profile(r'<project>\slides\deck-profile.json')['palette']
 use_defaults(text=PAL['text'], rule=PAL['rule'])
@@ -59,15 +64,29 @@ set_runs(shape_by_id(S(22), 44), [[
     R('一般のアプリコードでは使わない。', 7.6, PINK, SANS, b=True),
 ]])
 
-prs.save(DECK)
+save_replace(prs, DECK)                                   # 一時ファイル → 置き換え（守り 3）
+assert_untouched(BEFORE, slide_fingerprints(DECK), TARGET)  # 対象外は XML まで同一（守り 4）
 print('Batch A saved')
 ```
 
 規約:
 
 * **1スクリプト = 1バッチ**。スライド番号とコメントIDをコメントに書く。あとで追跡できる。
+* **4 つの守りを省かない**（対象外を拒む／枚数とタイトルを確かめる／一時ファイルから置き換える／
+  対象外が XML まで同一か確かめる）。雛形は `templates/edit-script.py`。守りがあると、
+  API の上限で途中で止まっても保存の状態が確かで、続きから終えられる。
+* **編集は 1 件ずつ関数にして順に実行し、進み具合をファイルに書く。** 途中で落ちたら、
+  再実行ではなく「何を書くはずだったか」の一覧（`EDITS`）から再開する。
+  5 件まとめた置換の 4 件目で例外 → 再実行で 1 件入れ忘れ、という実例がある。
+* 字数の予算に入れない文字（タイトル・章ラベル・出典行・ナビ・図の名札・参照列・凡例の頭）は
+  `textbox(..., name='label:…')` / `shape(..., name='src:…')` のように**役割名を付ける**。
+  `check_deck.py` はその接頭辞（`visual.uncounted`）の図形を数えない。
 * 実行後は必ず `render_deck.py` で目視確認。`check_deck.py` はその前に。
 * 失敗したら `save_backup` の戻り値から戻す。
+* **Markdown の状態ファイル（storyboard / review_state / source_index）は、この骨格で触らない。**
+  `str.replace` を連ねて末尾で書き込む形は、1 件目の成功を見せたまま 2 件目で落ち、
+  何も書かれない。`techdeck-workflow/scripts/statekit.py` を使う（節の境界・1 回一致・
+  改行コードを機械が守る）。
 
 ---
 

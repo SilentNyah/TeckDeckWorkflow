@@ -16,6 +16,13 @@ and made of nothing but the file itself.
 `bg` is the knock-out colour -- the '!' inside a filled triangle, the windows in
 a building. Pass the colour the icon actually sits on, not always palette.bg.
 
+`size` is the COMPOSITION box, not the drawn extent. Most glyphs inset their strokes
+(`cross` keeps 4% inside), so draw(..., 0.628, y, size=0.184) does not give you a
+0.184-in glyph at x=0.628 -- it lands at 0.635 / 0.169. Decide the drawn box you want,
+call draw() once, read the real xfrm back with `inspect_deck.py --slide N`, and derive
+the arguments from that (for `cross`: draw(..., 0.620, y, size=0.200)). Put the CALL
+ARGUMENTS in the storyboard, never the measured box; six slides re-derived this.
+
 Run this file directly to write a labelled contact sheet of every pictogram:
 
     python pictogram.py out.pptx --profile slides/deck-profile.json

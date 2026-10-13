@@ -25,6 +25,8 @@ Four rules this module exists to enforce (each cost real debugging time):
 Always ``save_backup()`` before a batch edit. Batch edits are not undoable.
 """
 import copy
+import hashlib
+import os
 import shutil
 import time
 from lxml import etree
@@ -238,9 +240,16 @@ def _para_xml(runs, algn):
 
 
 def textbox(slide, x, y, w, h, paras, algn='l', anchor='ctr', wrap='square',
-            spc_pct=None):
-    """paras: list of list-of-R (one inner list per paragraph)."""
+            spc_pct=None, name=None):
+    """paras: list of list-of-R (one inner list per paragraph).
+
+    name: shape name (``cNvPr/@name``). Give budget-exempt text a role prefix --
+    ``'title:'`` ``'chapter:'`` ``'nav:'`` ``'src:'`` ``'label:'`` ``'ref:'`` ``'legend:'`` --
+    and ``check_deck.py`` leaves it out of the character count (``visual.uncounted``).
+    An unnamed box is counted as body text.
+    """
     sid = next_id(slide)
+    label = ('%s %d' % (name, sid - 1)) if name else ('TextBox %d' % (sid - 1))
     lnspc = ''
     if spc_pct:
         lnspc = '<a:lnSpc><a:spcPct val="%d"/></a:lnSpc>' % int(spc_pct * 1000)
@@ -249,12 +258,12 @@ def textbox(slide, x, y, w, h, paras, algn='l', anchor='ctr', wrap='square',
         body = ''.join(_run_xml(r) for r in runs)
         ps.append('<a:p><a:pPr algn="%s">%s<a:buNone/></a:pPr>%s</a:p>' % (algn, lnspc, body))
     xml = (
-        '<p:sp><p:nvSpPr><p:cNvPr id="%d" name="TextBox %d"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>'
+        '<p:sp><p:nvSpPr><p:cNvPr id="%d" name="%s"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>'
         '<p:spPr><a:xfrm><a:off x="%d" y="%d"/><a:ext cx="%d" cy="%d"/></a:xfrm>'
         '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr>'
         '<p:txBody><a:bodyPr wrap="%s" lIns="0" tIns="0" rIns="0" bIns="0" anchor="%s"/>'
         '<a:lstStyle/>%s</p:txBody></p:sp>'
-        % (sid, sid - 1, emu(x), emu(y), emu(w), emu(h), wrap, anchor, ''.join(ps))
+        % (sid, _esc(label), emu(x), emu(y), emu(w), emu(h), wrap, anchor, ''.join(ps))
     )
     el = frag(xml)[0]
     spTree(slide).append(el)
@@ -423,6 +432,38 @@ def save_backup(path, suffix=None):
     dst = '%s.bak-%s.pptx' % (path[:-5] if path.endswith('.pptx') else path, suffix)
     shutil.copy2(path, dst)
     return dst
+
+
+def slide_fingerprints(prs_or_path):
+    """{position: sha1 of the slide XML}. Take one before a batch edit and one after
+    (from the SAVED file), then ``assert_untouched()``."""
+    from pptx import Presentation
+    prs = prs_or_path if hasattr(prs_or_path, 'slides') else Presentation(prs_or_path)
+    out = {}
+    for i, s in enumerate(prs.slides, 1):
+        out[i] = hashlib.sha1(etree.tostring(s._element, method='c14n')).hexdigest()
+    return out
+
+
+def assert_untouched(before, after, touched):
+    """Raise AssertionError unless every slide NOT in `touched` (1-based) is XML-identical
+    and the slide count is unchanged. Guard 4 of a build script: it is what makes a run
+    that died half-way safe to resume."""
+    touched = {int(t) for t in touched}
+    if set(before) != set(after):
+        raise AssertionError('slide count changed: %d -> %d' % (len(before), len(after)))
+    changed = sorted(i for i in before if i not in touched and before[i] != after[i])
+    if changed:
+        raise AssertionError('slides outside the target changed: %s' % changed)
+    return True
+
+
+def save_replace(prs, path):
+    """Save to a temp file beside `path`, then replace it -- never a half-written deck."""
+    tmp = '%s.tmp-%d' % (path, os.getpid())
+    prs.save(tmp)
+    os.replace(tmp, path)
+    return path
 
 
 def delete_slides(prs, positions):
@@ -904,20 +945,68 @@ def _adjust_break(text, start, cut, window):
     return cut
 
 
-def wrap_ja(text, width_in, pt, font=None, window=10):
-    """Break Japanese text into lines that fit width_in, honouring 禁則処理.
+_BUDOUX = None
 
-    A safety net, not the primary mechanism: a slide's key message should carry
-    the line breaks a human chose in the storyboard. Use this for body text, and
-    to check whether an authored line will hold at a given width.
+
+def _budoux_parser():
+    """The BudouX parser when the optional `budoux` package is installed, else None."""
+    global _BUDOUX
+    if _BUDOUX is None:
+        try:
+            import budoux
+            _BUDOUX = budoux.load_default_japanese_parser()
+        except Exception:
+            _BUDOUX = False
+    return _BUDOUX or None
+
+
+_OPEN_BR = '（「『【〈《〔｛［(['
+_CLOSE_BR = '）」』】〉》〕｝］)]'
+
+
+def phrase_breaks(text):
+    """Split Japanese text into 文節 with BudouX; a bracketed span stays one unit.
+
+    Returns a list whose concatenation is `text`, or None when BudouX is not installed
+    (callers fall back to character counting). Use it to check an authored line break:
+    the break is fine when ``len(line1)`` is one of the cumulative phrase lengths.
+    """
+    p = _budoux_parser()
+    if p is None:
+        return None
+    out, depth = [], 0
+    for ph in p.parse(text):
+        if out and depth > 0:
+            out[-1] += ph
+        else:
+            out.append(ph)
+        depth += sum(ph.count(c) for c in _OPEN_BR) - sum(ph.count(c) for c in _CLOSE_BR)
+        depth = max(depth, 0)
+    return out
+
+
+def wrap_ja(text, width_in, pt, font=None, window=10, phrase=None):
+    """Break Japanese text into lines that fit width_in.
+
+    phrase=None   break on 文節 boundaries when `budoux` is installed, otherwise by
+                  character count with 禁則処理 (the old behaviour);
+    phrase=True   require BudouX (ImportError when missing);
+    phrase=False  character counting only.
+
+    A phrase wider than the box is still broken by characters (禁則 applies). This is a
+    safety net, not the primary mechanism: a key message carries the line breaks a human
+    chose in the storyboard -- and those should sit on phrase boundaries too (rubric R8-2).
+    Character counting cut 「指示して／いるのは」 and 「システムエン／ジニアリング」; a
+    reviewer then re-ran five slides for R5-5.
     """
     mono = (font or '') in MONO_FONTS
     unit = pt / 72.0
-    out = []
-    for hard in text.split('\n'):
-        if not hard:
-            out.append('')
-            continue
+
+    def width(s):
+        return sum(_em(ch, mono) * unit for ch in s)
+
+    def by_chars(hard):
+        out = []
         start, n = 0, len(hard)
         while start < n:
             w, end = 0.0, start
@@ -934,6 +1023,35 @@ def wrap_ja(text, width_in, pt, font=None, window=10):
             start = cut
             while start < n and hard[start] == ' ':
                 start += 1
+        return out
+
+    parser_ok = _budoux_parser() is not None
+    if phrase is True and not parser_ok:
+        raise ImportError('wrap_ja(phrase=True) needs the budoux package: pip install budoux')
+    use_phrase = (phrase is not False) and parser_ok
+    out = []
+    for hard in text.split('\n'):
+        if not hard:
+            out.append('')
+            continue
+        if not use_phrase:
+            out.extend(by_chars(hard))
+            continue
+        line = ''
+        for ph in phrase_breaks(hard):
+            if width(ph) > width_in:               # one phrase wider than the box
+                if line:
+                    out.append(line)
+                pieces = by_chars(ph)
+                out.extend(pieces[:-1])
+                line = pieces[-1]
+            elif line and width(line + ph) > width_in:
+                out.append(line)
+                line = ph
+            else:
+                line += ph
+        if line:
+            out.append(line)
     return out
 
 

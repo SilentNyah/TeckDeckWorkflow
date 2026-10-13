@@ -13,7 +13,7 @@ Programmatic .pptx editing that survives contact with PowerPoint.
   の `Dispatch('PowerPoint.Application')`) 経由のみで、**LibreOffice フォールバックは無い**。
   PowerPoint が無い環境では編集・検査はできるが、`render_deck.py` の PNG/PDF 書き出しは動かない。
 * **Python 3.10 以上**（3.13.5 で検証）
-* `pip install python-pptx pywin32 pypdfium2`
+* `pip install python-pptx pywin32 pypdfium2`（任意: `budoux`）
 
 | パッケージ | 必要な範囲 | 検証版 |
 | --- | --- | --- |
@@ -21,6 +21,7 @@ Programmatic .pptx editing that survives contact with PowerPoint.
 | `lxml` | `deckkit` の raw OOXML 操作（python-pptx が依存として入れる） | — |
 | `pywin32` | `render_deck.py` の PNG / PDF 書き出しのみ | — |
 | `pypdfium2` | `render_deck.py --from-pdf`（既存 PDF のラスタ化）のみ | — |
+| `budoux` | **任意。** `deckkit.wrap_ja()` の文節での改行と、`check_deck.py` の「文節の途中で改行している」lint。無ければ従来の文字数折りに戻り、lint は黙る（Apache-2.0、純 Python） | 0.9.3 |
 
 PowerPoint の実行ファイルパスは指定不要。COM がレジストリから解決する。
 
@@ -75,7 +76,7 @@ placeholder title slide as proof the palette is internally legible.
 4. **`render_deck.py`** — export PNG.
 5. **Look at the PNGs.** python-pptx will report text that PowerPoint refuses to draw.
 
-## Eight gotchas that will bite you
+## Nine gotchas that will bite you
 
 Full symptoms and repros: `reference/ooxml-gotchas.md`.
 
@@ -109,6 +110,12 @@ Full symptoms and repros: `reference/ooxml-gotchas.md`.
    nothing looks broken — the diagram just **contradicts its own caption**, and only a human
    reading the rendered PNG catches it. Use `arrow(slide, x1,y1, x2,y2)`: the head always
    lands on `(x2,y2)`.
+9. **`pictogram.draw(size=)` is the composition box, not the drawn box.** Glyphs inset their
+   strokes (`cross` keeps 4% inside), so `size=0.184` at `x=0.628` draws a 0.169-in glyph at
+   0.635 — and a storyboard that specifies the *drawn* box sends every later slide hunting
+   for the arguments (six did). Call once, read the real xfrm back with
+   `inspect_deck.py --slide N`, derive the arguments, and write the **arguments** into the
+   storyboard, never the measured box.
 
 ## Scripts
 
@@ -128,6 +135,14 @@ Full symptoms and repros: `reference/ooxml-gotchas.md`.
 
 `deckkit.py` and `codehl.py` are **import-only**, not CLIs — every edit is bespoke.
 `pictogram.py` is both: import `draw`, or run it to eyeball the catalogue.
+
+**Start every batch script from `templates/edit-script.py`.** It carries the four guards a
+build script needs — refuse slides outside the target, assert count and titles, save to a
+temp file then replace, prove untouched slides are XML-identical afterwards — plus a progress
+file, so a script the API cut off half-way can be resumed instead of re-run from memory
+(re-running from memory is how one of five edits got dropped). Markdown state files
+(`storyboard.md`, `review_state.md`, `source_index.md`) are not edited with ad-hoc
+`str.replace` chains at all: use `techdeck-workflow/scripts/statekit.py`.
 
 ## deckkit API
 
@@ -153,13 +168,16 @@ from deckkit import R, set_runs, set_para, shape_by_id, el_by_id, set_xfrm, \
 | `R(text, sz, color, font, b, i, hl, u)` | one text run spec. `hl` = highlighter colour, `u` = underline |
 | `set_runs(shape, paras)` | replace a whole text frame; `paras` = list of list-of-R |
 | `set_para(shape, i, runs)` | replace one paragraph's runs (gotcha 3) |
-| `textbox(slide, x,y,w,h, paras, algn, anchor, spc_pct)` | new text box |
+| `textbox(slide, x,y,w,h, paras, algn, anchor, spc_pct, name)` | new text box. `name='label:…'` / `'src:…'` / `'title:…'` / `'nav:…'` / `'ref:…'` / `'legend:…'` / `'chapter:…'` marks text the character budget must not count (`visual.uncounted`) |
 | `rrect(slide, x,y,w,h, fill, line, lw, adj, shadow, fill_alpha, dash)` | rounded rectangle (a `shape()` wrapper) |
 | `shape(slide, prst, x,y,w,h, ..., runs=, rot=, flipH=)` | **any** preset geometry, with text inside it. See gotcha 6 for `adj` |
 | `text_in(el, paras, algn, anchor, ins)` | put text INSIDE an existing shape — one shape, not a box plus a label |
 | `picture(slide, path, x,y, w=None, h=None)` | insert an image; give w or h alone to keep the aspect ratio |
 | `measure(runs)` / `fits(runs, width_in)` | estimated drawn width in inches. **Advisory** |
-| `wrap_ja(text, width_in, pt, font)` | break Japanese text with 禁則処理 |
+| `wrap_ja(text, width_in, pt, font, phrase=None)` | break Japanese text on 文節 boundaries (BudouX, when installed) with 禁則処理; `phrase=False` = character counting only |
+| `phrase_breaks(text)` | the 文節 list BudouX sees (brackets kept whole), or `None` without budoux — use it to check an authored key-message break |
+| `slide_fingerprints(prs \| path)` / `assert_untouched(before, after, touched)` | sha1 per slide; fail if any slide outside `touched` changed or the count moved. Guard 4 of a build script |
+| `save_replace(prs, path)` | save to a temp file, then replace — never a half-written deck |
 | `contrast_ratio(fg, bg)` | WCAG ratio — check an accent before you commit to it |
 | `arrow(slide, x1,y1, x2,y2, color, lw, dash, tip, both, back)` | **every arrow in every diagram.** Head always lands on `(x2,y2)`; the box and the flips are derived for you |
 | `connector(slide, x,y,w,h, color, lw, dash, start, end, flipH, flipV)` | bare line, positioned by bounding box. `head=`/`tail=` still work but mean **start**/**end**, not "the pointy end" (gotcha 8) |
@@ -241,10 +259,12 @@ the exit code:
 | --- | --- |
 | text estimated to overflow its own shape | the rubric's most common defect, previously findable only in the PNG |
 | no in-sentence emphasis, or far too much | "everything is bold" reads the same as "nothing is bold" |
-| character count over the profile's budget | the signal to convert prose into a diagram, or split the slide |
+| **body** character count over the profile's budget | the signal to plan a split. Shapes whose name starts with a `visual.uncounted` prefix (`title:` `chapter:` `nav:` `src:` `label:` `ref:` `legend:`, pictograms) are reported separately and not counted — that is how the count matches `visual-design.md` §5. Replacing prose with a diagram rarely lowers it: labels are characters too |
+| a line break inside a 文節 (needs `budoux`) | 「指示して／いるのは」 is the R8-2 / R5-5 defect a reviewer otherwise finds five times per batch. Only consecutive Japanese paragraphs where the first does not end a clause are checked |
 
 Tune them under `visual` in the deck profile; `--no-visual` turns them off.
 **They are estimates.** They shrink the number of render cycles; they do not replace one.
+An unnamed deck (no role prefixes) over-counts: the reviewer re-counts body text by hand.
 
 ### `--contrast` is advisory, not a gate
 

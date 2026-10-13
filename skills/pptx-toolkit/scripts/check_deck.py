@@ -258,7 +258,70 @@ VISUAL_DEFAULTS = {
     'key_message_max_chars': 30,
     'body_char_budget': 450,
     'emphasis_budget': 3,
+    # shape-name prefixes whose text is NOT body text (visual-design.md §5):
+    # titles, chapter labels, navigation, source lines, diagram part labels,
+    # table reference columns, legend headers, pictogram glyphs
+    'uncounted': ['title:', 'chapter:', 'nav:', 'src:', 'label:', 'ref:', 'legend:',
+                  'Pictogram'],
 }
+_CJK_PUNCT_END = '。、．，！？」』）】・:：'
+_CJK_PUNCT_START = '（「『【・'
+_PAREN_OPEN = '（(【'
+_PAREN_CLOSE = '）)】'
+
+
+def _is_hira(c):
+    return '\u3041' <= c <= '\u309f'
+
+
+def _is_kata(c):
+    return ('\u30a1' <= c <= '\u30ff') or c == 'ー'
+
+
+def _is_cjk_letter(c):
+    return _is_hira(c) or _is_kata(c) or ('\u4e00' <= c <= '\u9fff')
+
+
+def phrase_break_defect(a, b, phrase_breaks):
+    """Why the paragraph break between a and b looks like a break INSIDE a word/phrase,
+    or None. Deliberately narrow: two unrelated lines in one text box (list items, a label
+    and its sub-label) must not fire -- on real decks a naive BudouX comparison flagged 28
+    of 37 slides. The three shapes it does catch are the ones reviewers actually raised:
+
+      1. 「指示して／いるのは」   b starts with hiragana (okurigana / particle continues a)
+      2. 「システムエン／ジニアリング」   katakana word split across lines
+      3. 「（SES＝／準委任契約の呼び名）」   a short parenthetical broken open
+
+    Shapes 1 and 2 additionally require BudouX to find NO phrase boundary at the break.
+    """
+    a, b = a.strip(), b.strip()
+    if not a or not b or a[-1] in _CJK_PUNCT_END or b[0] in _CJK_PUNCT_START:
+        return None
+    if not any(_is_cjk_letter(c) for c in a + b):
+        return None                      # Latin-only text (code, URLs) is not 文節 territory
+    # 3. a short parenthetical (<= 24 chars) left open at the line end
+    for o, c in zip(_PAREN_OPEN, _PAREN_CLOSE):
+        i = a.rfind(o)
+        if i != -1 and c not in a[i:]:
+            j = b.find(c)
+            if j != -1 and (len(a) - i) + j + 1 <= 24:
+                return 'parenthetical %r broken open' % (a[i:] + '／' + b[:j + 1])
+    if not _is_cjk_letter(a[-1]) or not _is_cjk_letter(b[0]):
+        return None
+    hira_cont = _is_hira(b[0])
+    kata_split = _is_kata(a[-1]) and _is_kata(b[0])
+    if not (hira_cont or kata_split):
+        return None
+    if phrase_breaks is None:
+        return None
+    phrases = phrase_breaks(a + b) or []
+    cuts, pos = set(), 0
+    for ph in phrases:
+        pos += len(ph)
+        cuts.add(pos)
+    if len(a) in cuts:
+        return None
+    return 'hiragana continuation' if hira_cont else 'katakana word split'
 _EMU_IN = 914400.0
 _DEF_INS = {'lIns': 91440, 'tIns': 45720, 'rIns': 91440, 'bIns': 45720}
 
@@ -300,17 +363,23 @@ def visual_checks(prs, idx, slide, profile, findings):
     from lxml import etree
     from pptx.util import Emu
     try:
-        from deckkit import _em
+        from deckkit import _em, is_fullwidth
     except Exception:
         return                                    # measurement unavailable
+    try:
+        from deckkit import phrase_breaks         # None at call time without budoux
+    except Exception:
+        phrase_breaks = None
     where = 'slide %d' % idx
     cfg = _visual_cfg(profile)
+    uncounted_prefixes = tuple(cfg.get('uncounted') or ())
     pal = (profile or {}).get('palette') or {}
     accents = {v.upper() for k, v in pal.items() if k.startswith('accent')}
     bright = {v.upper() for k, v in pal.items()
               if k in ('text_bright', 'bg_alt')}
 
     total_chars = 0
+    uncounted_chars = 0   # text in shapes named with a visual.uncounted prefix
     emphasis = 0          # emphasis spans INSIDE a sentence
     any_mark = 0          # any bold / accent / highlight run at all
     for el in slide.shapes._spTree:
@@ -327,6 +396,8 @@ def visual_checks(prs, idx, slide, profile, findings):
             continue
         cnv = el.find('.//' + q(P, 'cNvPr'))
         sid = cnv.get('id') if cnv is not None else '?'
+        sname = (cnv.get('name') or '') if cnv is not None else ''
+        exempt = sname.startswith(uncounted_prefixes) if uncounted_prefixes else False
         ext = xfrm.find(q(A, 'ext'))
         if ext is None:
             continue
@@ -348,10 +419,13 @@ def visual_checks(prs, idx, slide, profile, findings):
             continue
 
         used_h, worst = 0.0, None
+        ptexts = []
         for p_el in body.findall(q(A, 'p')):
             runs = _runs_of(p_el, etree)
             if not runs:
                 continue          # an empty paragraph draws nothing
+            ptexts.append((''.join(r[0] for r in runs),
+                           all(r[2] in ('Courier New', 'Consolas', 'MS Gothic') for r in runs)))
             width = 0.0
             marked = [bool(b or h or (c in accents) or (c in bright))
                       for _, _, _, b, c, h in runs]
@@ -363,7 +437,10 @@ def visual_checks(prs, idx, slide, profile, findings):
             if mixed:
                 emphasis += sum(marked)
             for text, pt, font, bold, colour, hl in runs:
-                total_chars += len(text.strip())
+                if exempt:
+                    uncounted_chars += len(text.strip())
+                else:
+                    total_chars += len(text.strip())
                 mono = font in ('Courier New', 'Consolas', 'MS Gothic')
                 for ch in text:
                     width += (pt / 72.0) * _em(ch, mono)
@@ -399,6 +476,20 @@ def visual_checks(prs, idx, slide, profile, findings):
                              '%.2fin box -- %r will be clipped'
                              % (sid, worst[0], avail_w, worst[1])))
 
+        # R8-2: a hand-written line break inside a word / short parenthetical.
+        # Needs budoux for shapes 1-2; silent without it. See phrase_break_defect().
+        if not exempt and len(ptexts) >= 2:
+            for (a_txt, a_code), (b_txt, b_code) in zip(ptexts, ptexts[1:]):
+                if a_code or b_code:
+                    continue                 # code lines break where the code breaks
+                why = phrase_break_defect(a_txt, b_txt, phrase_breaks)
+                if why:
+                    findings.append((where, 'LOW',
+                                     'shape %s: line break inside a phrase (%s) -- %r / %r '
+                                     '(estimate; break at a 文節 boundary) [R8-2]'
+                                     % (sid, why, a_txt.strip()[-8:], b_txt.strip()[:8])))
+                    break
+
     if total_chars:
         if any_mark == 0:
             findings.append((where, 'LOW',
@@ -419,9 +510,15 @@ def visual_checks(prs, idx, slide, profile, findings):
                              % (emphasis, cfg['emphasis_budget'])))
         if total_chars > cfg['body_char_budget']:
             findings.append((where, 'LOW',
-                             '%d characters of text, budget %d -- convert some to a '
-                             'diagram or pictogram, or split the slide [R8-7]'
-                             % (total_chars, cfg['body_char_budget'])))
+                             '%d characters of body text%s, budget %d -- over by %d. '
+                             'Plan a split or move content; replacing prose with a '
+                             'diagram rarely lowers the count (labels are characters). '
+                             'Unnamed labels/sources/nav? name them with a visual.uncounted '
+                             'prefix [R8-7]'
+                             % (total_chars,
+                                ' (+%d in uncounted shapes)' % uncounted_chars if uncounted_chars else '',
+                                cfg['body_char_budget'],
+                                total_chars - cfg['body_char_budget'])))
 
 
 def infer_profile(prs):
