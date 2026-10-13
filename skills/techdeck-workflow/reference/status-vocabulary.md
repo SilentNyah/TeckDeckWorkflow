@@ -181,7 +181,11 @@ Category 欄、レビュー用エージェントの `Category`）で共通の**�
 | `CMT-rNNN-NNN` | PPTXコメント | `CMT-r002-014` |
 | `rNNN` | レビューラウンド | `r002` |
 | `bNNN` | 作成バッチ | `b003` |
+| `ASC-NNN` | 承認済みスライドの是正要求（`review_state.md` のキュー） | `ASC-004` |
 | `Slide NNN` | スライド | `Slide 039` |
 
 `FINDING-NNN` は調査結果とレビュー指摘の両方で使われる。参照時は文脈を明記すること。
 番号は各系列で連番。**既存の最大値の次**を使い、欠番を埋めない。
+**採番の前に、その番号が未使用であることを grep で確かめる**（`SRC-024` を二重採番した実例がある。
+`scripts/statekit.py next-id <PREFIX>` が最大値＋1 を返す）。
+実測・実験の結果は `SRC-NNN`（Source type: 検証結果）で登録し、別の系列を作らない。

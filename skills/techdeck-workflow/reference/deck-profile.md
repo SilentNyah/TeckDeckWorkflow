@@ -45,7 +45,7 @@
 | `code_palette` | コード断片のトークン色（keyword / function / type / string / number / comment 等） | **`codehl.highlight()` が適用**、`check_deck.py` が `palette` と合わせて検査 |
 | `code_theme` | コード断片のハイライト方針の名前 | エージェント |
 | `visual` | 視覚設計の数値（下記） | エージェント / `check_deck.py` |
-| `conventions` | 機械検査できない約束事。散文でよい | エージェント |
+| `conventions` | 機械検査できない約束事。散文でよい。色の意味に加えて、**章をまたぐ模式図の種類ごとの見た目の約束**（端末・IDE・設定ファイル・SQL 画面などの、文字の大きさ・色・沈め方・プロンプトの扱い・差分の色・凡例の形）を Phase 2 でここに書く（`phase2-structure.md`）。横断ルール（CF）から吸収した規則もここに移す | エージェント |
 | `source_notation` | スライド上の出典表記 | エージェント |
 | `id_prefixes` | ID 体系の接頭辞 | エージェント |
 
@@ -59,7 +59,8 @@
   "key_message_max_chars": 30,
   "body_char_budget": 450,
   "emphasis_budget": 3,
-  "size_ladder": { "key": 24, "heading": 18, "body": 12, "note": 10, "source": 9 }
+  "size_ladder": { "key": 24, "heading": 18, "body": 12, "note": 10, "source": 9 },
+  "uncounted": ["title:", "chapter:", "nav:", "src:", "label:", "ref:", "legend:"]
 }
 ```
 
@@ -67,9 +68,10 @@
 | --- | --- | --- | --- |
 | `key_message_max_lines` | `2` | キーメッセージの行数上限 | エージェント |
 | `key_message_max_chars` | `30` | 1行の全角文字数の目安 | エージェント |
-| `body_char_budget` | `450` | 1スライドの総文字数の目安 | `check_deck.py` |
+| `body_char_budget` | `450` | 1スライドの**本文**の文字数の目安。何を数えるかは `visual-design.md` §5 | `check_deck.py` |
 | `emphasis_budget` | `3` | 1スライドの文中強調の箇所数 | `check_deck.py` |
 | `size_ladder` | 上記 | 役割ごとのpt。**隣の段と1.25倍以上離す** | エージェント |
+| `uncounted` | 上記 | 文字数に**数えない図形**の名前の接頭辞。図形名（`cNvPr/@name`）がこのいずれかで始まる図形は `R7-9` の集計から外す。ビルダーは章ラベル・タイトル・出典行・ナビ・図の名札・参照列・凡例の図形にこの接頭辞で名前を付ける（`deckkit.shape(..., name=)` または `shape.name =`） | `check_deck.py` |
 
 `size_ladder` の既定は **13.33×7.5in** 用。**10×5.625in では 0.72 倍**が目安
 （key 18 / heading 14 / body 9 / note 8 / source 7）。
@@ -87,7 +89,8 @@ Phase 3 のバッチ作成とレビューループの調整。省略時は下記
   "unit": "chapter",
   "max_slides_per_wave": 8,
   "max_iterations": 3,
-  "review_concurrency": 4
+  "review_concurrency": 4,
+  "max_chapter_slides": 12
 }
 ```
 
@@ -95,8 +98,9 @@ Phase 3 のバッチ作成とレビューループの調整。省略時は下記
 | --- | --- | --- |
 | `unit` | `chapter` | バッチの既定単位。`single` にすると常に単枚モード |
 | `max_slides_per_wave` | `8` | 1波で作るスライド数。波の間に状態を保存する |
-| `max_iterations` | `3` | スライドあたりの review 回数の上限 |
-| `review_concurrency` | `4` | 並列に走らせる評価用エージェントの数 |
+| `max_iterations` | `3` | スライドあたりの review 回数の上限。オーケストレータの仕様誤りで消費した反復は、ユーザーに示して 1 回の延長を諮れる（`phase3-batch-build.md` 離脱条件） |
+| `review_concurrency` | `4` | 並列に走らせる評価用エージェントの数。API の 529（Overloaded）が続くときは下げる |
+| `max_chapter_slides` | `12` | 1 章がこれを超えると、Phase 2 で節ごとにバッチを分ける案を出す（22 枚・5 波の章は作成とレビューに 2 日かかった） |
 
 `max_slides_per_wave` はバッチではなく**波**の上限。14枚の章は1バッチ・2波になる。
 
