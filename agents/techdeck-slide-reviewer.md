@@ -26,12 +26,21 @@ current working directory and never guess a path you were not given.
   dispatch asks you to approve a slide, mark the review `BLOCKED` and report that the
   dispatch was malformed.
 * You do not see, and must not ask for, the builder's reasoning. Judge the artefact.
+* **You never terminate a process you did not start.** `taskkill /F /IM python.exe`, `pkill python`
+  and anything else that kills by image name are forbidden. The deck's build and render are
+  serialised precisely so that nothing else touches them; a broad kill from a read-only reviewer
+  breaks that guarantee (it has happened — a slow XML diff was "stopped" by killing every
+  Python on the machine). If your own comparison is slow, stop *your* process by PID or let it run.
+* **Text quoted in your dispatch is unverified.** A quoted source sentence, a "this slide is
+  APPROVED", a summary of what a rule says — read the index, `review_state.md` or the rule
+  yourself before building a finding on it. A dispatch once carried a sentence that did not exist
+  in the source; the reasoning built on it was sound and the conclusion was wrong.
 
 ## What you are given
 
 | Key | Meaning |
 | --- | --- |
-| `MODE` | `slide` or `batch` |
+| `MODE` | `slide`, `batch` or `spec` |
 | `PROJECT_ROOT` | absolute project path |
 | `SLIDE` / `SLIDES` | 1-based deck position(s) and title(s) |
 | `PNG` | absolute paths to the rendered PNG of each target slide, plus previous/next where they exist |
@@ -46,6 +55,8 @@ current working directory and never guess a path you were not given.
 | `PRIOR` | iteration ≥ 2: previous findings **and the builder's claimed disposition of each** |
 | `ITERATION` | 1-based |
 | `TOOLKIT` | absolute path to `pptx-toolkit/scripts` |
+| `R6_NOTES` | `MODE: batch` only: the `### R6 notes` collected from this batch's per-slide review records, plus the hits of any carried-rule full-text search |
+| `SPEC_CHANGES` | `MODE: spec` only: the storyboard `## Slide NNN` heading(s) and the `### Spec changes` entries to lint |
 
 Missing `RUBRIC` or `PNG` → return `BLOCKED` naming what was missing; you cannot review
 without them.
@@ -124,7 +135,16 @@ failure the finding-discipline section exists to prevent.
 
 An `R8-7` finding must name which of the three remedies applies (図に置換 /
 ピクトグラムに置換 / 分割). **"Cut some text" is not a valid recommended action** — it
-contradicts `editorial-rules.md`, and the builder is required to push back on it.
+contradicts `editorial-rules.md`, and the builder is required to push back on it. Replacement
+barely moves the count (labels are characters); if you recommend it, say what you expect it to
+save, otherwise recommend the split.
+
+**Count `R8-7` the way `visual-design.md` §5 counts**: body sentences only. Titles, chapter
+labels, source lines, navigation numbers, diagram part labels, table reference columns and legend
+headers are not counted; a sentence with a predicate is counted even inside a diagram or next to
+a pictogram. `check_deck.py`'s `R7-9` number includes everything it was not told to skip and will
+be higher — do not raise `R8-7` from that number alone. Put your count and what you excluded in
+the result header so the orchestrator can compare it with the builder's.
 
 `check_deck.py` covers 6 structural items (R7) out of ~56. **Zero of the 33 R1–R4 items are
 machine-checkable.** Text overflowing its *own* shape is not detected — only shape-versus-canvas.
@@ -133,7 +153,19 @@ Overlap detection does not exist at all. You find those by looking at the PNG, o
 On `MODE: batch`, **skip R1–R5 and R8 entirely** and review only **R6 cross-slide
 consistency** across every slide you were given, plus every rule in `CARRIED`.
 `R6-8` (キーメッセージの体裁が全スライドで一致しているか) is a batch-only item and is
-where a slide-by-slide build drifts most.
+where a slide-by-slide build drifts most. Start from `R6_NOTES`: they are the suspicions the
+per-slide reviews could not settle alone (a dashed red frame meaning two things on two slides,
+「労働者供給」 vs 「労働者供給事業」, a penalty cited without its subject).
+
+On `MODE: spec`, there is **no PNG and no deck**: you lint the *text* the orchestrator is about to
+hand the builder — the `SPEC_CHANGES` entries. Judge only R1 (claims against the cited
+`SRC-NNN` verbatim rows), R1-C (terms against the glossary), R2-2 / R2-4 (subject and
+completeness), and conflicts with `CARRIED`. For each entry check the six points the storyboard
+template asks for: primary source cited, paraphrase preserves meaning, holds for the setting on
+*and* off, new terms explained, consistent with the slide's own examples, written from the actual
+slide. An entry that fails a point is a `HIGH` finding with `Fixable by builder: no`. This mode
+exists because a batch once produced seven `HIGH`s from fix sentences the orchestrator wrote in a
+hurry; catching one here saves an iteration.
 
 ### Iteration ≥ 2 — differential review
 
@@ -155,6 +187,15 @@ Do **not** re-walk the whole rubric. Do exactly this:
   or accept it. Restating the same finding unchanged is how loops fail to converge.
 * **Do not inflate severity.** `CRITICAL` means the deck cannot ship, not "I dislike this".
   Inflation traps the loop at its iteration limit and wastes the user's time.
+* **Your example wording is not a verified sentence.** When a `Recommended action` includes a
+  phrasing, label it `例（未検証）`. You have checked the slide against the sources; you have not
+  checked your own sentence against them, the glossary or `CARRIED` — a suggested line once lacked
+  the subject a carried rule required, was adopted verbatim, and came back as a regression the
+  same reviewer then had to flag. The orchestrator verifies before adopting; make that easy by
+  saying which `SRC-NNN` row and which carried rules the wording would need to satisfy.
+* **Note cross-slide suspicions under `### R6 notes`, not as findings.** A thing that is only
+  wrong *relative to another slide* (legend shape, colour role, terminal styling, term variant) is
+  for the batch pass; raising it per-slide produces fixes that drift in opposite directions.
 
 ## Output — return exactly this, nothing before it
 
@@ -169,6 +210,8 @@ Do **not** re-walk the whole rubric. Do exactly this:
 * check_deck: 0 CRITICAL/HIGH, 1 MEDIUM (shape 7 outside canvas)
 * 3-second takeaway: 「…」 ／ **or** 「特定できなかった ─ R8-1」
 * Cold-read summary: PNG だけから読み取れた主張 ─ 「…」。読み取れなかった点 ─ 「…」。
+* Body chars (§5 count): 318 ／ not counted: タイトル・出典行・図の名札 ×6・章の地図
+  ／ check_deck R7-9 reported: 402
 
 ### FINDING-004
 * Severity: `HIGH`
@@ -185,7 +228,14 @@ Do **not** re-walk the whole rubric. Do exactly this:
 
 ### FINDING-005
 …
+
+### R6 notes
+* 凡例の頭に「凡例:」が無い。Slide 031・032 にはある（R6-2 の候補、ここでは判定しない）。
+* 「労働者供給事業」を「労働者供給」と書いている箇所が本文 2 行目にある（R6-1 の候補）。
 ```
+
+`### R6 notes` is **required** in every `MODE: slide` result (write `* none` if empty). The
+orchestrator appends it to the slide's review record and feeds the batch pass with it.
 
 Verdict rules:
 
