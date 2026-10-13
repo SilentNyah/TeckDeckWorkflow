@@ -54,6 +54,9 @@ PPTX の読み書きは `pptx-toolkit` に一本化されており、**PNG / PDF
 | `skills/pptx-toolkit` | Skill | python-pptx + 生 OOXML による PPTX の生成・編集・検査・レンダリング・コメント抽出 |
 | `agents/techdeck-slide-builder.md` | Agent | 指示されたスライドだけを作る／直す。承認はしない |
 | `agents/techdeck-slide-reviewer.md` | Agent | レンダリング済み PNG を先に見て批判的にレビューする。読み取り専用 |
+| `skills/techdeck-workflow/scripts/statekit.py` | CLI | 状態ファイル（storyboard / review_state / source_index / レビュー記録）への書き込みを機械が守る。採番・URL 重複の検査 |
+| `skills/techdeck-workflow/scripts/renumber.py` | CLI | スライドの分割・挿入後の番号振り直しを 1 パスで。既定は dry run、承認済みスライドへの影響を別掲 |
+| `skills/pptx-toolkit/templates/edit-script.py` | 雛形 | ビルダーのバッチ編集スクリプト。対象外を拒む・一時ファイル置き換え・対象外スライドの XML 同一性検証・進み具合ファイル |
 
 この2つのエージェントがどう噛み合うかは [制作ループの仕組み](#制作ループの仕組み)。
 
@@ -75,6 +78,7 @@ PPTX の読み書きは `pptx-toolkit` に一本化されており、**PNG / PDF
   | `python-pptx` | 必須（1.0.2 で検証）。`lxml` は依存として入る |
   | `pywin32` | `render_deck.py` の PNG / PDF 書き出しのみ |
   | `pypdfium2` | `render_deck.py --from-pdf` のみ |
+  | `budoux` | **任意**（0.9.3 で検証）。日本語を文節で折る `deckkit.wrap_ja(phrase=)` と、`check_deck.py` の「文節の途中で改行している」lint。無ければ従来の文字数折りに戻る |
 
 * 日本語スライドを作る場合、プロファイル既定の **Yu Gothic**（`dark`/`light` プリセット）が
   入っていること。別のフォントを使うなら `slides/deck-profile.json` の `fonts.cjk` を差し替える。
@@ -236,6 +240,19 @@ PowerPoint 上で付けたコメントを取り込んで直させることもで
 `ppt/comments/modernComment_*.xml` を掘って、スライド番号とアンカー図形に対応付ける。
 コメント付きのファイルは `slides/review-input/` に**読み取り専用の原本**として退避され、
 ラウンド番号（`rNNN`）で管理される。
+
+### 建てる前に出典を確定し、発注文は契約で書く
+
+4 デッキ分の運用で、`CRITICAL` / `HIGH` の多くは「仕様をビルド後に直した」順序の問題と、
+オーケストレータが発注文や直しの文に書いた誤りから出ていた（反省点 G・I・N）。そのため Phase 3 は、
+
+* バッチの着手前に、その章が引く出典を**一次情報で開き直して**索引の逐語を照合する工程（§2「出典を確定する」）を持ち、
+* ビルダー・レビュー担当への発注文を**キーと値だけの契約**で書き（出典の本文・推奨文言・ビルダーの言い分を転記しない）、
+* オーケストレータが storyboard に書き足す文は `### Spec changes` に **6 点検**（一次資料／言い換え／オン・オフ／新語／例との整合／実物を見た）付きで起こしてから本文を書き換える。
+
+仕様は storyboard・`review_state.md` の規則・発注文・図の生成器・`source_index.md` の **5 つの面**にあり、
+1 つ直したら同じ編集で全部を掃く。Markdown の状態ファイルは `statekit.py` で、番号の振り直しは
+`renumber.py` で書く ─ 規則ではなく道具が守る。
 
 ## 設計上の制約（意図的なもの）
 
