@@ -44,15 +44,15 @@ current working directory and never guess a path you were not given.
 | `PROJECT_ROOT` | absolute project path |
 | `SLIDE` / `SLIDES` | 1-based deck position(s) and title(s) |
 | `PNG` | absolute paths to the rendered PNG of each target slide, plus previous/next where they exist |
-| `STORYBOARD` | absolute path to `slides/storyboard.md` and the `## Slide NNN` heading(s) to read |
+| `STORYBOARD` | absolute path to `slides/storyboard.md` and the `## Slide NNN` heading(s) to read — read each entry **once**, whole (`python <techdeck-workflow>/scripts/statekit.py show-slide <path> --slide NNN`, the script lives under the `RUBRIC` file's parent's sibling `scripts/`), not in slices |
 | `SOURCES` | absolute path to `sources/source_index.md` and the `SRC-NNN` ids the storyboard cites |
 | `EXAMPLES` | absolute paths under `examples/` when the slide shows code |
 | `PROFILE` | absolute path to `slides/deck-profile.json` (palette, fonts, geometry, 表記規約) |
 | `GLOSSARY` | absolute path to `notes/glossary.md` |
 | `RUBRIC` | absolute path to `reference/review-rubric.md` — the only rubric that exists |
 | `VISUAL` | absolute path to `reference/visual-design.md` — the numbers behind R8 |
-| `CARRIED` | the batch's current `## Feedback carried forward` rules, verbatim |
-| `PRIOR` | iteration ≥ 2: previous findings **and the builder's claimed disposition of each** |
+| `CARRIED` | the carried rules as `statekit.py show-cf --for-slide` prints them: one imperative line each, 図/コード rules omitted when the slide has neither. The orchestrator does not paste the section; if a rule's background matters, read `review_state.md` for that `CF-NN` only |
+| `PRIOR` | iteration ≥ 2: the path of `slides/reviews/slide-NNN.md` and the heading of the previous `## REVIEW RESULT`, plus the builder's `Finding dispositions` table (or its path). Read them yourself; the dispatch does not restate them |
 | `ITERATION` | 1-based |
 | `TOOLKIT` | absolute path to `pptx-toolkit/scripts` |
 | `R6_NOTES` | `MODE: batch` only: the `### R6 notes` collected from this batch's per-slide review records, plus the hits of any carried-rule full-text search |
@@ -176,6 +176,9 @@ Do **not** re-walk the whole rubric. Do exactly this:
 2. Check for **regressions** — damage the fix caused elsewhere on the slide.
 3. Raise a new finding only if it is `CRITICAL` or `HIGH`.
    **Do not raise new `MEDIUM`/`LOW` findings after iteration 1.**
+4. Read only what this needs: the rubric items the `PRIOR` findings cite, R5 and `R8-1` for the
+   regression check, and `VISUAL` only if an R8 finding is still open. Do not re-read the whole
+   rubric or `visual-design.md` on a differential pass.
 
 ## Finding discipline — this is what makes the loop terminate
 
@@ -236,6 +239,11 @@ Do **not** re-walk the whole rubric. Do exactly this:
 
 `### R6 notes` is **required** in every `MODE: slide` result (write `* none` if empty). The
 orchestrator appends it to the slide's review record and feeds the batch pass with it.
+
+Caps — the orchestrator pays for every line twice (your output, then cache write on its next
+call): each finding **≤ 8 lines**; `### R6 notes` **≤ 5 bullets**; on iteration ≥ 2 cite a
+`PRIOR` finding by id and its new status instead of restating its text; put a long evidence list
+in one bullet separated by `;`. Nothing before `## REVIEW RESULT`.
 
 Verdict rules:
 

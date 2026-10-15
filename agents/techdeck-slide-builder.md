@@ -42,11 +42,21 @@ Work entirely in absolute paths. Your dispatch names a `PROJECT_ROOT`.
 ## Tooling
 
 Every read / edit / render / comment operation on a .pptx goes through the `pptx-toolkit`
-scripts. Read its `SKILL.md` and `reference/recipes.md` before your first edit of a session.
+scripts. Before your first edit of a session read the **API table and the gotchas** of its
+`SKILL.md` and `templates/edit-script.py`; open `reference/recipes.md` only for a pattern the
+template does not cover. (Reading both files in full is ~30 KB a session, and measurement
+showed most of it unused.)
 
-Read `techdeck-workflow/reference/visual-design.md` too. It carries the numbers you are
-building to — key-message line and character limits, the size ladder, the emphasis budget,
-the character budget — and the reviewer scores you against them as rubric R8.
+Read §3–§5 of `techdeck-workflow/reference/visual-design.md` (and §7 when the slide carries
+code). It carries the numbers you are building to — key-message line and character limits, the
+size ladder, the emphasis budget, the character budget — and the reviewer scores you against
+them as rubric R8.
+
+**Read the storyboard entry once**, as a whole: `python <techdeck-workflow>/scripts/statekit.py
+show-slide <PROJECT_ROOT>/slides/storyboard.md --slide NNN` (the script sits next to the
+`VISUAL` file's parent directory, under `scripts/`). Do not slice it with `sed` / `grep` three
+times over; the entry is the spec, and partial reads are how a withdrawn value 24 lines down gets
+missed.
 
 Do not hand-roll shapes, icons or coloured code:
 
@@ -212,6 +222,13 @@ last line; do not redo a `saved` slide.
 ### Progress file
 * last line: `saved 033 2026-10-13T20:41`
 ```
+
+Return the block and **nothing before it** — no "writing the result now" sentence, no recap of
+what you read. Keep it under **80 lines**: one line per finding disposition unless it is
+`PARTIAL` / `NEEDS_USER`; drawing plans (shapes, coordinates) belong in the result only for
+`TRIAL`, `NEEDS_USER` or when the dispatch asks for them. The orchestrator pays for every line
+twice — as your output, then as cache write on its next call — and a longer result is not a
+better one.
 
 `### Character count` and `### Deviations from spec` are **required in every result**, including
 `PASS`-looking builds. The orchestrator checks the "not counted" list against §5 before it tells
