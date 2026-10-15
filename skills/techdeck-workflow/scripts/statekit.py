@@ -31,6 +31,15 @@ printed so the placement can be verified, not just the existence.
     python statekit.py asc-add slides/review_state.md --slide 7 --source "b003 R6" \
         --content "限定語を追加" --impact "字数 +8" --when "Phase 4"
 
+Read side (one call instead of a dozen partial reads; nothing is written):
+
+    python statekit.py show-turn slides/review_state.md slides/storyboard.md --slide 33
+    python statekit.py show-slide slides/storyboard.md --slide 33 --sections "Current spec,Sources"
+    python statekit.py show-cf slides/review_state.md --for-slide 33 --storyboard slides/storyboard.md
+    python statekit.py show-ledger slides/review_state.md --slide 33
+    python statekit.py show-progress slides/review_state.md --slide 33
+    python statekit.py show-rules slides/review_state.md
+
 Text for --text may contain literal "\\n" to mean a newline, or be read from a file with @path.
 """
 import argparse
@@ -446,19 +455,36 @@ def progress_set(text, slide, status=None, date=None, notes=None, append_notes=N
     return _join(lines), r + 1
 
 
+_PLACEHOLDER = re.compile(r'^\s*(?:[*-]\s*)?(?:なし|無し|none|n/a|—|－|-)[。．.]?\s*$', re.I)
+
+
 def asc_add(text, slide, source, content, impact, when, status='OPEN'):
+    """Append an ASC row. The number comes from the queue table's ID column only —
+    a Progress note that already cites ASC-005 must not push the next row to ASC-006
+    (that happened: the note was written before the rows and the rows came out shifted)."""
     lines = _lines(text)
     sec = find_section(lines, r'^Approved slide change requests$', 2, what='## Approved slide change requests')
-    mx = 0
-    for m in re.finditer(r'(?<![A-Za-z0-9])ASC-(\d{3,4})(?!\d)', _join(lines)):
-        mx = max(mx, int(m.group(1)))
-    ident = 'ASC-%03d' % (mx + 1)
-    row = _row([ident, str(slide), source, content, impact, when, '`%s`' % status])
     try:
         _, header, first, end = find_table(lines, sec, r'^\|\s*ID\s*\|', what='ASC table')
+    except StateError:
+        header = first = end = None
+    mx = 0
+    if header is not None:
+        for i in range(first, end):
+            m = re.match(r'ASC-(\d{3,4})$', _norm_key(_cells(lines[i])[0]))
+            if m:
+                mx = max(mx, int(m.group(1)))
+    ident = 'ASC-%03d' % (mx + 1)
+    row = _row([ident, str(slide), source, content, impact, when, '`%s`' % status])
+    if header is not None:
         lines[end:end] = [row]
         idx = end
-    except StateError:
+    else:
+        # drop a 「なし。」-style placeholder so the new table does not sit under it
+        for i in range(sec.end - 1, sec.start, -1):
+            if _PLACEHOLDER.match(lines[i]):
+                del lines[i]
+        sec = find_section(lines, r'^Approved slide change requests$', 2)
         block = ['| ID | Slide | 出所 | 内容 | 影響 | 処理時期 | 状態 |',
                  '| --- | ---: | --- | --- | --- | --- | --- |', row]
         idx = insert_at_section_end(lines, sec, block) + 2
@@ -504,7 +530,201 @@ def asc_add_file(path, **kw):
 
 
 def review_append_file(path, section, block):
+    """Append to a review record, creating the file (with its title line) when it does not
+    exist yet — the first `R6 notes` of a fresh slide used to die with FileNotFoundError."""
+    if not os.path.exists(path):
+        d = os.path.dirname(path)
+        if d:
+            os.makedirs(d, exist_ok=True)
+        with io.open(path, 'w', encoding='utf-8', newline='') as f:
+            f.write('# Review Report\n')
     return _apply(path, lambda t: review_append(t, section, block))
+
+
+# --------------------------------------------------------------------------- read side
+# One call per orchestrator turn. The 2026-10-15 benchmark showed a turn spending 28–40 tool
+# calls on partial reads of review_state.md / storyboard.md; these print exactly what a turn
+# needs, and `show-cf` compresses the carried-forward rules to one line each (count kept).
+
+@dataclass
+class CfRule:
+    id: str          # 'CF-01' or ''
+    tags: list       # 対象 tags, [] when untagged (untagged rules are always kept)
+    text: str        # the rule as one line
+
+
+_CF_TAG = re.compile(r'【([^】]*)】')
+_CF_ID = re.compile(r'(?<![A-Za-z0-9])(CF-\d+)')
+_CF_BOLD = re.compile(r'^\*\*(CF-\d+)\s*[:：]?\s*(.*?)\*\*\s*(.*)$')
+_BULLET = re.compile(r'^[*-]\s+(.*)$')
+
+
+def extract_section(text, title, level=2):
+    """The `## title` section as text (heading included), '' when absent."""
+    lines = _lines(text)
+    sec = find_section(lines, r'^%s$' % re.escape(title), level, allow_missing=True)
+    if sec is None:
+        return ''
+    return _join(lines[sec.start:sec.end]).rstrip('\n') + '\n'
+
+
+def _tags_of(text):
+    m = _CF_TAG.search(text)
+    if not m:
+        return []
+    for part in re.split(r'\s*/\s*', m.group(1)):
+        if part.startswith('対象'):
+            val = re.split(r'[:：]', part, 1)[-1]
+            return [t.strip() for t in re.split(r'[、,，／/]', val) if t.strip()]
+    return []
+
+
+def cf_rules(text):
+    """Parse `## Feedback carried forward` into one CfRule per rule.
+
+    Two shapes exist in real projects: the schema's one-bullet-per-rule
+    (`* 【出所 / 由来 / rubric / 対象: 図】rule…`) and an older bold-heading shape
+    (`**CF-01 title**（refs）` followed by explanation paragraphs / tables). The explanation
+    is what makes the section 100 KB; the rule line is what the builder has to obey.
+    """
+    sec = extract_section(text, 'Feedback carried forward')
+    lines = _lines(sec)[1:]
+    mask = fence_mask(lines)
+    rules, i, open_heading = [], 0, False
+    while i < len(lines):
+        ln = lines[i]
+        if mask[i]:
+            i += 1
+            continue
+        s = ln.rstrip()
+        if _HEAD.match(s) or s.strip() == '---':
+            open_heading = False
+            i += 1
+            continue
+        m = _CF_BOLD.match(s.strip())
+        if m:
+            tail = m.group(3).strip()
+            txt = ('%s %s %s' % (m.group(1), m.group(2).strip(), tail)).strip()
+            rules.append(CfRule(m.group(1), _tags_of(txt), re.sub(r'\s+', ' ', txt)))
+            open_heading = True
+            i += 1
+            continue
+        b = _BULLET.match(s)
+        if b and not s.startswith((' ', '\t')) and ('【' in s or not open_heading):
+            parts = [b.group(1).strip()]
+            i += 1
+            while i < len(lines) and lines[i].strip() and lines[i].startswith((' ', '\t')) \
+                    and not _BULLET.match(lines[i].strip()):
+                parts.append(lines[i].strip())
+                i += 1
+            txt = re.sub(r'\s+', ' ', ' '.join(parts))
+            idm = _CF_ID.search(txt)
+            rules.append(CfRule(idm.group(1) if idm else '', _tags_of(txt), txt))
+            continue
+        i += 1
+    return rules
+
+
+def cf_filter(rules, exclude_tags=None):
+    """Drop a rule only when every one of its tags is excluded; untagged rules always stay."""
+    ex = set(exclude_tags or [])
+    return [r for r in rules if not r.tags or not all(t in ex for t in r.tags)]
+
+
+def show_cf(text, exclude_tags=None):
+    rules = cf_rules(text)
+    kept = cf_filter(rules, exclude_tags)
+    head = '## Feedback carried forward（compressed: %d of %d rules%s）' % (
+        len(kept), len(rules),
+        '; excluded tags: %s' % '、'.join(exclude_tags) if exclude_tags else '')
+    return '\n'.join([head, ''] + ['* ' + r.text for r in kept]) + '\n'
+
+
+def _slide_eq(cell, slide):
+    a, b = _norm_key(cell), str(slide).strip()
+    if a.isdigit() and b.isdigit():
+        return int(a) == int(b)
+    return a == b
+
+
+def show_progress(text, slide):
+    lines = _lines(text)
+    sec = find_section(lines, r'^Progress$', 2, what='## Progress')
+    h, header, first, end = find_table(lines, sec, r'^\|\s*Slide', what='Progress table')
+    rows = [lines[i] for i in range(first, end) if _slide_eq(_cells(lines[i])[0], slide)]
+    if not rows:
+        raise StateError('Progress row for slide %s not found' % slide)
+    return '\n'.join(['## Progress（Slide %s）' % slide, '', lines[h], lines[h + 1]] + rows) + '\n'
+
+
+def show_ledger(text, slide=None, batch=None):
+    lines = _lines(text)
+    sec = find_section(lines, r'^Current target$', 2, what='## Current target')
+    out = ['## Current target%s' % ('（Slide %s）' % slide if slide else ''), '']
+    subs = [h for h in headings(lines) if h[1] == 3 and sec.start < h[0] < sec.end]
+    for n, (start, lvl, title) in enumerate(subs):
+        end = subs[n + 1][0] if n + 1 < len(subs) else sec.end
+        if batch and not re.search(r'(?<![A-Za-z0-9])%s(?!\d)' % re.escape(batch), title):
+            continue
+        sub = Section(start, end, 3, title)
+        try:
+            h, header, first, tend = find_table(lines, sub, r'^\|\s*Slide\s*\|')
+        except StateError:
+            continue
+        rows = [lines[i] for i in range(first, tend) if slide is None or _slide_eq(_cells(lines[i])[0], slide)]
+        if not rows:
+            continue
+        meta = [lines[i] for i in range(start + 1, h) if lines[i].lstrip().startswith(('* ', '- '))]
+        out += ['### ' + title, ''] + meta + ([''] if meta else []) + [lines[h], lines[h + 1]] + rows + ['']
+    return '\n'.join(out).rstrip('\n') + '\n'
+
+
+def show_slide(text, slide, sections=None):
+    lines = _lines(text)
+    sec = _slide_section(lines, slide)
+    if not sections:
+        return _join(lines[sec.start:sec.end]).rstrip('\n') + '\n'
+    out = [lines[sec.start], '']
+    for name in sections:
+        sub = find_section(lines, r'^%s$' % re.escape(name), 3, within=sec, allow_missing=True)
+        if sub is None:
+            out += ['### %s' % name, '', '（なし）', '']
+        else:
+            out += lines[sub.start:sub.end]
+    return _join(out).rstrip('\n') + '\n'
+
+
+def _subsection_has_content(lines, sec, name):
+    sub = find_section(lines, r'^%s$' % re.escape(name), 3, within=sec, allow_missing=True)
+    if sub is None:
+        return False
+    body = [l.strip() for l in lines[sub.start + 1:sub.end] if l.strip() and not _HEAD.match(l)]
+    return any(not _PLACEHOLDER.match(l) for l in body)
+
+
+def slide_excluded_tags(text, slide):
+    """Tags whose rules do not apply to this slide: 図 without a diagram, コード without code."""
+    lines = _lines(text)
+    sec = _slide_section(lines, slide)
+    ex = []
+    if not _subsection_has_content(lines, sec, 'Diagram'):
+        ex.append('図')
+    if not _subsection_has_content(lines, sec, 'Code'):
+        ex.append('コード')
+    return ex
+
+
+def show_turn(state_text, storyboard_text, slide, sections=None):
+    """Everything one Phase 3 turn needs about one slide, in one read."""
+    parts = [extract_section(state_text, 'Rules')]
+    try:
+        parts.append(show_progress(state_text, slide))
+    except StateError as e:
+        parts.append('## Progress（Slide %s）\n\n（%s）\n' % (slide, e))
+    parts.append(show_ledger(state_text, slide=slide))
+    parts.append(show_cf(state_text, slide_excluded_tags(storyboard_text, slide)))
+    parts.append('## Storyboard\n\n' + show_slide(storyboard_text, slide, sections))
+    return '\n'.join(p.rstrip('\n') + '\n' for p in parts)
 
 
 # --------------------------------------------------------------------------- CLI
@@ -528,9 +748,41 @@ def _kv(items):
     return out
 
 
+def _utf8_console():
+    """Help and messages contain non-cp932 characters; a cp932 console must not crash them."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding='utf-8', errors='replace')
+        except Exception:
+            pass
+
+
 def main(argv=None):
+    _utf8_console()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest='cmd', required=True)
+
+    p = sub.add_parser('show-turn', help='one read for one slide: Rules + Progress row + ledger rows + '
+                                        'compressed CF (図/コード rules dropped when the slide has none) + storyboard entry')
+    p.add_argument('state', help='slides/review_state.md'); p.add_argument('storyboard', help='slides/storyboard.md')
+    p.add_argument('--slide', required=True)
+    p.add_argument('--sections', help='comma-separated ### sections of the storyboard entry (default: whole entry)')
+
+    p = sub.add_parser('show-rules', help='print ## Rules of review_state.md')
+    p.add_argument('state')
+
+    p = sub.add_parser('show-progress', help='print the Progress row of one slide')
+    p.add_argument('state'); p.add_argument('--slide', required=True)
+
+    p = sub.add_parser('show-ledger', help='print the batch ledger rows (of one slide and/or one batch)')
+    p.add_argument('state'); p.add_argument('--slide'); p.add_argument('--batch')
+
+    p = sub.add_parser('show-cf', help='print carried-forward rules one line each; --exclude-tags 図,コード or '
+                                      '--for-slide N with --storyboard to drop rules the slide cannot need')
+    p.add_argument('state'); p.add_argument('--exclude-tags'); p.add_argument('--for-slide'); p.add_argument('--storyboard')
+
+    p = sub.add_parser('show-slide', help='print one ## Slide NNN entry of storyboard.md (or only --sections)')
+    p.add_argument('storyboard'); p.add_argument('--slide', required=True); p.add_argument('--sections')
 
     p = sub.add_parser('next-id', help='print PREFIX-NNN one past the largest number mentioned under --root')
     p.add_argument('prefix')
@@ -573,10 +825,30 @@ def main(argv=None):
 
     a = ap.parse_args(argv)
     try:
-        sys.stdout.reconfigure(encoding='utf-8')
-    except Exception:
-        pass
-    try:
+        if a.cmd.startswith('show-'):
+            def rd(p):
+                with io.open(p, encoding='utf-8') as f:
+                    return f.read()
+            secs = [s.strip() for s in a.sections.split(',')] if getattr(a, 'sections', None) else None
+            if a.cmd == 'show-turn':
+                out = show_turn(rd(a.state), rd(a.storyboard), a.slide, secs)
+            elif a.cmd == 'show-rules':
+                out = extract_section(rd(a.state), 'Rules')
+            elif a.cmd == 'show-progress':
+                out = show_progress(rd(a.state), a.slide)
+            elif a.cmd == 'show-ledger':
+                out = show_ledger(rd(a.state), slide=a.slide, batch=a.batch)
+            elif a.cmd == 'show-cf':
+                ex = [t.strip() for t in a.exclude_tags.split(',')] if a.exclude_tags else []
+                if a.for_slide:
+                    if not a.storyboard:
+                        raise StateError('--for-slide needs --storyboard')
+                    ex += slide_excluded_tags(rd(a.storyboard), a.for_slide)
+                out = show_cf(rd(a.state), ex or None)
+            else:
+                out = show_slide(rd(a.storyboard), a.slide, secs)
+            sys.stdout.write(out)
+            return 0
         if a.cmd == 'next-id':
             print(next_id(a.root, a.prefix))
             return 0

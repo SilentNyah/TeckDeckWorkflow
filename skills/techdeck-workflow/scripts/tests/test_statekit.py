@@ -357,5 +357,246 @@ class TestCli(TmpProject):
         self.assertIn('SRC-005', out.stdout)
 
 
+
+# --------------------------------------------------------------------------- read side (show-*)
+# Why these exist: in the 2026-10-15 benchmark an orchestrator turn made 28–40 tool calls, most
+# of them partial reads of review_state.md / storyboard.md and re-reads of statekit.py because
+# --help crashed under cp932. One call per turn is the target.
+
+CF_MIXED = """# Slide Review State
+
+## Rules
+
+* 状態はスライド単位で管理する。
+* エージェント自身の判断で `APPROVED` にしない。
+
+## Current target
+
+### バッチ b005（2026-10-13 ─ 第5章 Slide 032–035）
+
+* Batch ID: `b005`
+
+| Slide | Wave | Build | Review iter | Exit verdict | Open CRIT/HIGH | Deferred | 状態 |
+| ----: | ---: | ----- | ----------: | ------------ | -------------: | -------- | ---- |
+| 032 | 0 | done | 2 | `PASS` | 0 | — | `AWAITING_REVIEW` |
+| 033 | 1 | done | 1 | `REVISION_REQUIRED` | 2 | — | `DRAFTING` |
+
+### バッチ b004（2026-10-06 ─ 第4章）── 承認済み
+
+| Slide | Wave | Build | Review iter | Exit verdict | Open CRIT/HIGH | Deferred | 状態 |
+| ----: | ---: | ----- | ----------: | ------------ | -------------: | -------- | ---- |
+| 030 | 1 | done | 2 | `PASS` | 0 | — | `APPROVED` |
+
+## Progress
+
+| Slide (現位置) | Title | Status | Last updated | Notes |
+| ----: | ----- | ----------- | ------------ | ------------ |
+| 30 | ViewModel | `APPROVED` | 2026-09-20 | b004 |
+| 33 | コード編 | `DRAFTING` | 2026-10-13 | b005 iter1。ASC-005 を参照 |
+
+## Feedback carried forward
+
+今後の全スライドに効く横断ルール。
+
+* **出典のない数値を書かない**（`DEC-008`）。テスト比率、saved state のサイズ上限。
+* **図は公式の現物を貼らず、構造の型だけ翻案する**（`DEC-007`）。
+  適用は Slide 024・058 のみ。
+
+---
+
+### バッチ b001 のパイロット（Slide 008）で追加された横断ルール
+
+**CF-01 層の色は3色に固定する**（`DEC-013`。レビュー `FINDING-008-01`、`HIGH`）
+
+| 層 | 色 |
+| --- | --- |
+| UI 層 | `accent_green` |
+
+マスター図・凡例・表・章 kicker のすべてでこの3色を使う。
+理由: ダークテーマでは「濃い＝土台」が成立しない。
+
+**CF-02 凡例より前に矢印を使うスライドには前方参照を1行置く**（`FINDING-008-02`、`HIGH`）
+
+線種の凡例は Slide 013 で初めて出る。
+
+> 矢印が何を意味するかは Slide 011 で説明する。
+
+* 【b003 / Slide 031 由来 / R3-6 / 対象: 図】矢印ラベルには必ず動作主体を書く
+  （「join」ではなく「親が子を join」）。
+* 【b003 / Slide 033 由来 / R1-C-4 / 対象: 用語】`CoroutineScope` は常にコードフォント。
+* 【r002 / ユーザー指示 / 対象: コード】`mark_lines` を必ず付ける。
+
+## Pending decisions
+
+なし。
+
+## Approved slide change requests
+
+なし。
+"""
+
+STORYBOARD_033 = """# Storyboard
+
+## Slide 032: 概念編
+
+### Status
+
+`AWAITING_REVIEW`
+
+## Slide 033: 親は子の完了を暗黙に待つ（コード編）
+
+### Status
+
+`DRAFTING`
+
+### Current spec
+
+* キーメッセージ: 親スコープは、子コルーチンが終わるまで完了しない。
+
+### Key message
+
+行1: 親は **子の完了** を暗黙に待つ。
+
+### Diagram
+
+#### Diagram type
+
+タイムライン（概念図）。
+
+### Code
+
+なし。
+
+### Sources
+
+| Source ID | Used for | 依拠する逐語 |
+| --------- | -------- | ------------ |
+| `SRC-039` | 機構 | #1 |
+
+### Known risks
+
+* 5 秒の意味を推測で書かない。
+
+## Slide 034: 次
+
+### Status
+
+`NOT_STARTED`
+"""
+
+
+class TestCfRules(unittest.TestCase):
+    def test_one_line_per_rule_and_count_is_preserved(self):
+        rules = statekit.cf_rules(CF_MIXED)
+        self.assertEqual(len(rules), 7)          # 2 top bullets + CF-01 + CF-02 + 3 tagged bullets
+        for r in rules:
+            self.assertNotIn('\n', r.text)
+
+    def test_schema_bullet_keeps_tag_and_joins_continuation(self):
+        r = [r for r in statekit.cf_rules(CF_MIXED) if '動作主体' in r.text][0]
+        self.assertEqual(r.tags, ['図'])
+        self.assertIn('親が子を join', r.text)
+
+    def test_bold_heading_rule_drops_its_explanation_and_is_untagged(self):
+        r = [r for r in statekit.cf_rules(CF_MIXED) if r.id == 'CF-01'][0]
+        self.assertTrue(r.text.startswith('CF-01 層の色は3色に固定する'))
+        self.assertNotIn('マスター図', r.text)
+        self.assertEqual(r.tags, [])
+
+    def test_filter_drops_only_rules_whose_tag_is_excluded(self):
+        rules = statekit.cf_rules(CF_MIXED)
+        kept = statekit.cf_filter(rules, exclude_tags=['コード'])
+        self.assertEqual(len(kept), 6)
+        self.assertFalse(any('mark_lines' in r.text for r in kept))
+        self.assertTrue(any(r.id == 'CF-01' for r in kept))      # untagged always kept
+
+    def test_show_cf_keeps_every_rule_and_drops_explanations(self):
+        out = statekit.show_cf(CF_MIXED)
+        self.assertIn('7 of 7 rules', out)
+        self.assertEqual(sum(1 for l in out.splitlines() if l.startswith('* ')), 7)
+        for dropped in ('マスター図', '理由:', '| UI 層', '矢印が何を意味するかは', '線種の凡例は Slide 013'):
+            self.assertNotIn(dropped, out)
+
+
+class TestShow(unittest.TestCase):
+    def test_show_progress_prints_only_the_slide_row(self):
+        out = statekit.show_progress(CF_MIXED, 33)
+        self.assertIn('| 33 |', out)
+        self.assertIn('DRAFTING', out)
+        self.assertNotIn('| 30 |', out)
+
+    def test_show_ledger_prints_batch_heading_and_the_slide_rows(self):
+        out = statekit.show_ledger(CF_MIXED, slide=33)
+        self.assertIn('### バッチ b005', out)
+        self.assertIn('| 033 |', out)
+        self.assertNotIn('| 032 |', out)
+        self.assertNotIn('b004', out)
+
+    def test_show_slide_whole_section_by_default(self):
+        out = statekit.show_slide(STORYBOARD_033, 33)
+        self.assertTrue(out.startswith('## Slide 033'))
+        self.assertIn('### Known risks', out)
+        self.assertNotIn('## Slide 034', out)
+
+    def test_show_slide_sections_subset(self):
+        out = statekit.show_slide(STORYBOARD_033, 33, sections=['Current spec', 'Sources'])
+        self.assertIn('### Current spec', out)
+        self.assertIn('SRC-039', out)
+        self.assertNotIn('### Known risks', out)
+
+    def test_slide_tags_derive_from_diagram_and_code_sections(self):
+        self.assertEqual(statekit.slide_excluded_tags(STORYBOARD_033, 33), ['コード'])   # Diagram present, Code 'なし'
+
+    def test_show_turn_composes_rules_progress_ledger_cf_and_slide(self):
+        out = statekit.show_turn(CF_MIXED, STORYBOARD_033, 33)
+        for needle in ('## Rules', '| 33 |', '### バッチ b005', 'CF-01', '動作主体', '### Current spec', '6 of 7 rules'):
+            self.assertIn(needle, out)
+        self.assertNotIn('mark_lines', out)   # コード rule dropped: the slide has no code
+
+
+class TestAscNumbering(unittest.TestCase):
+    def test_numbers_from_the_table_not_from_mentions_elsewhere(self):
+        text = REVIEW_STATE.replace('| rev2 |', '| rev2。ASC-009 参照 |')
+        new, _ = statekit.asc_add(text, slide=13, source='b002 R6', content='凡例', impact='', when='Phase 4')
+        self.assertIn('| ASC-002 | 13 |', new)
+
+    def test_first_row_replaces_the_placeholder_line(self):
+        new, _ = statekit.asc_add(CF_MIXED, slide=33, source='b005 R6', content='凡例', impact='', when='Phase 4')
+        sec = statekit.extract_section(new, 'Approved slide change requests')
+        self.assertIn('| ASC-001 | 33 |', sec)
+        self.assertNotIn('なし。', sec)
+
+
+class TestReviewAppendFile(unittest.TestCase):
+    def test_creates_the_record_file_when_missing(self):
+        root = tempfile.mkdtemp(prefix='statekit-')
+        path = os.path.join(root, 'slides', 'reviews', 'slide-033.md')
+        line = statekit.review_append_file(path, 'R6 notes', '* 凡例の頭に「凡例:」が無い')
+        with io.open(path, encoding='utf-8') as f:
+            s = f.read()
+        self.assertTrue(s.startswith('# Review Report'))
+        self.assertIn('## R6 notes', s)
+        self.assertIn('* 凡例の頭', s)
+        self.assertGreater(line, 1)
+
+
+class TestCliHelp(unittest.TestCase):
+    def test_help_prints_when_stdout_is_cp932(self):
+        buf = io.BytesIO()
+        wrapper = io.TextIOWrapper(buf, encoding='cp932')   # keep a reference: GC would close buf
+        saved = sys.stdout
+        sys.stdout = wrapper
+        try:
+            with self.assertRaises(SystemExit) as cm:
+                statekit.main(['--help'])
+            wrapper.flush()
+            data = buf.getvalue()
+        finally:
+            sys.stdout = saved
+            wrapper.detach()
+        self.assertEqual(cm.exception.code, 0)
+        self.assertIn(b'show-turn', data)
+
+
 if __name__ == '__main__':
     unittest.main()
