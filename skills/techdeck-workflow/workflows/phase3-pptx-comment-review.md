@@ -41,8 +41,8 @@ cp slides/deck.pptx slides/review-input/deck-review-rNNN.pptx
 
 * 関連ファイル:
 
-  * `slides/storyboard.md`
-  * `slides/review_state.md`
+  * `slides/storyboard.md` と `slides/review_state.md` ─ コメントのあるスライドごとに
+    `python scripts/statekit.py show-turn slides/review_state.md slides/storyboard.md --slide N` で 1 回で読む
   * `sources/`
   * `notes/`
   * `examples/`

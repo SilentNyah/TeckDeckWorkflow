@@ -158,8 +158,11 @@
 吸収したら、以降の発注文はその規約を参照する。規則の件数ではなく**執行経路の有無**が問題なので、
 「発注文に毎回書かれ、レビューで毎回照合される」場所に置く。
 
-オーケストレータはこの節**全体**を、以降のすべての build 指示・review 指示・
-バッチ整合パスに渡す。
+オーケストレータは `scripts/statekit.py show-cf slides/review_state.md --for-slide N --storyboard slides/storyboard.md`
+の出力（規則 1 件 1 行。図・コードの無いスライドではそのタグの規則を省いた**全件**）を
+build 指示・review 指示に渡す。**節の全文は渡さない** ─ 100 件・118KB になった実例で、全文を
+読んだ agent は居なかった（説明段落は規則の根拠であって、従うべき文ではない）。
+バッチ整合パス（R6）だけは無指定の `show-cf` で全件を渡す。
 
 **完成済みスライドを、新しい横断ルールが増えるたびに再ループさせてはならない。**
 それは発散する。既存スライドへの遡及適用は、バッチ末尾の整合パス（R6）1回で行う。
@@ -190,6 +193,35 @@
 * 処理したスライドは `AWAITING_REVIEW` に戻し、再承認を得るまで `APPROVED` に戻さない。
 * 分割による**ページ番号だけの付け替え**はこのキューに載せず、`scripts/renumber.py` の変更一覧で
   まとめてユーザーに諮る（`phase3-batch-build.md` の「分割の判断」）。
+
+### statekit の使い方（1 画面。ソースは読まない）
+
+読む（何も書かない。Phase 3 の 1 ターンは `show-turn` 1 回で足りる）:
+
+| コマンド | 出すもの |
+| --- | --- |
+| `statekit.py show-turn slides/review_state.md slides/storyboard.md --slide N [--sections "Current spec,Sources"]` | `## Rules`・Progress 行・台帳行・圧縮した CF（図／コードの無いスライドはそのタグを省く）・storyboard の節 |
+| `statekit.py show-slide slides/storyboard.md --slide N [--sections …]` | storyboard の節（または指定した `###` だけ） |
+| `statekit.py show-cf slides/review_state.md [--for-slide N --storyboard …] [--exclude-tags 図,コード]` | CF を 1 件 1 行で。先頭行に「kept of total」 |
+| `statekit.py show-ledger slides/review_state.md [--slide N] [--batch bNNN]` | `## Current target` の台帳行 |
+| `statekit.py show-progress slides/review_state.md --slide N` | Progress の 1 行 |
+| `statekit.py show-rules slides/review_state.md` | `## Rules` |
+
+書く（置き場を機械が守り、書いた行番号を返す）:
+
+| コマンド | 書く先 |
+| --- | --- |
+| `progress-set … --slide N --status S --date D [--append-notes …]` | Progress 行 |
+| `ledger-set … --batch bNNN --slide N --set "列=値"` | 台帳行 |
+| `storyboard-set … --slide N --section "名前" --text … [--append] [--before …]` | storyboard の `###` 節（無ければ作る） |
+| `sources-row … --slide N --row "\| … \|"` | `### Sources` の表 |
+| `src-append … --src SRC-NNN --text … [--section …]` | 索引の節末 |
+| `review-append slides/reviews/slide-NNN.md --section "R6 notes" --text …` | レビュー記録（ファイルも見出しも無ければ作る） |
+| `asc-add … --slide N --source … --content … [--impact …] [--when …]` | ASC キュー（採番は表の ID 列だけから。注記で先に番号を引用しない） |
+| `next-id SRC` / `check-id SRC-024` / `dupes sources/source_index.md` | 採番・重複の検査 |
+
+`--text` は `\n` で改行、`@path` でファイルから。`--help` は UTF-8 で出る（cp932 の端末でも落ちない）。
+**`statekit.py` のソースを読んで使い方を調べない** ─ 1 ターンで 6〜14 回読まれた実例がある。
 
 ---
 

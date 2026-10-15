@@ -146,8 +146,12 @@ build → render → review → fix → review
 バッチの最後にまとめて書かない。途中で会話が圧縮されると、過去の結果を会話記録から
 掘り起こすことになる（実例あり）。
 
-各 build 指示と各 review 指示には、**`## Feedback carried forward` の全文**を渡す。
-発注文の構成は下記「発注文の契約」に従う。
+各 build 指示と各 review 指示には、
+`python scripts/statekit.py show-cf slides/review_state.md --for-slide N --storyboard slides/storyboard.md`
+の出力を渡す（規則 1 件 1 行。図・コードの無いスライドではそのタグの規則を省く。件数は先頭行で確認できる）。
+**`## Feedback carried forward` の全文は渡さない** ─ 100 件・118KB になった実例で、全文を読んだ agent は
+居なかった。整合パス（§6）だけは `show-cf` を無指定で全件渡す。
+発注文の構成は下記「発注文の契約」「発注文の上限」に従う。
 
 review 指示には `RUBRIC` に加えて **`VISUAL`**（`reference/visual-design.md` の絶対パス）
 を渡す。R8 の数値はそこにしか無く、渡さないと評価用エージェントが閾値を発明する。
@@ -281,11 +285,11 @@ R6 の指摘を直列で fix し、再レンダリングし、**直したスラ�
 | `PROJECT_ROOT` | 絶対パス |
 | `MODE` | `BUILD` / `FIX` |
 | `SLIDE` | デッキ位置とタイトル |
-| `STORYBOARD` | `slides/storyboard.md` の絶対パスと `## Slide NNN` 見出し。**「`### Sources` と `### Current spec` に従うこと」** |
+| `STORYBOARD` | `slides/storyboard.md` の絶対パスと `## Slide NNN` 見出し。**「`### Sources` と `### Current spec` に従うこと」**。「`statekit.py show-slide --slide NNN` で 1 回で読める」と添える |
 | `SOURCES` | `sources/source_index.md` の絶対パス。**`SRC-NNN` の一覧も本文も転記しない** |
 | `EXAMPLES` / `PROFILE` / `VISUAL` | 絶対パス |
-| `CARRIED` | `## Feedback carried forward` の全文（この節だけは本文を渡す。規則は命令形の一文で、転記しても陳腐化しにくい） |
-| `PRIOR`（FIX のみ） | `## REVIEW RESULT` ブロック全文と PNG のパス |
+| `CARRIED` | `show-cf --for-slide NNN` の出力（この節だけは本文を渡す。規則は命令形の一文で、転記しても陳腐化しにくい。**節の全文は渡さない**） |
+| `PRIOR`（FIX のみ） | `slides/reviews/slide-NNN.md` の絶対パスと `## REVIEW RESULT`（反復 N−1）の見出し、PNG のパス。**ブロック全文は転記しない**（§5 のとおり記録は反復ごとに追記済み。無ければ先に `statekit.py review-append` で書く） |
 | `PILOT_FOLLOWERS`（パイロットのみ） | 後続 N 枚がこの型で何を変えるか |
 | `PROGRESS_FILE` | ビルダーが段階ごとの進み具合を書く scratch ファイルの絶対パス（API の上限で止まったときの再開点） |
 
@@ -307,6 +311,15 @@ R6 の指摘を直列で fix し、再レンダリングし、**直したスラ�
 
 * storyboard を直した直後の発注は、**直した箇所を転記せず参照させる**。
 * `CARRIED` の規則が `conventions` に吸収済みなら、`PROFILE` を読ませる。
+
+### 発注文の上限
+
+発注文は**契約の表＋`CARRIED`（`show-cf` の出力）＋観点の散文 5 行まで**。合計 80 行を超えたら、
+超過分（確認した事実の列挙、R6 の候補、反復の進め方）は `slides/reviews/slide-NNN.md` に
+`statekit.py review-append` で書き、発注文にはそのパスを書く。
+出力は $50/MTok で払い、次の呼び出しで cache write としてもう一度払う
+（実測: 発注文 1 本 11〜27KB、オーケストレータ 1 ターンの出力 33〜53K トークン）。
+情報は落とさない ─ 置き場を変えるだけである。
 
 ---
 
@@ -430,7 +443,8 @@ Phase 1〜2 と同じ照合を通す。1 バッチで 7 件の `HIGH` が、急�
 
 ## Completion
 
-作業完了時は、次を報告する。
+作業完了時は、次を報告する。**下の項目だけを箇条書きで、1 項目 3 行まで。** 一覧が長いときは
+`slides/reviews/batch-bNNN.md` に書いてパスを示す（報告の散文は出力と cache write の二重払いになる）。
 
 * バッチID・対象スライド・波の構成
 * スライドごとの: 反復回数 / 総合判定 / 未解決の `CRITICAL`・`HIGH` / 最終状態

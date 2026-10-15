@@ -20,6 +20,11 @@ phases never auto-advance.
    conventions). If absent, propose creating one — see `reference/deck-profile.md`.
 3. Route to **exactly one** workflow (§1), read that file, follow it, stop where it says stop.
    Do not execute a phase you were not routed to.
+4. 対象スライドが決まる Phase 3 の経路（chat review / FIX / 単枚 / コメント）では、状態を
+   `python scripts/statekit.py show-turn slides/review_state.md slides/storyboard.md --slide N`
+   で **1 回**読む（`## Rules`・Progress 行・台帳行・圧縮した横断ルール・storyboard の節が出る）。
+   `review_state.md` / `storyboard.md` を `sed` / `head` で何度も部分読みしない ─ 実測で 1 ターンに
+   10〜20 回の部分読みと 28〜40 回のツール呼び出しが出た（§1b・§9）。
 
 ## 1. Routing
 
@@ -34,8 +39,22 @@ phases never auto-advance.
 | Phase 3 / the PPTX carries PowerPoint comments | `workflows/phase3-pptx-comment-review.md` |
 | Phase 4 / all slides APPROVED **and** user asks to finalize | `workflows/phase4-deck-final-review.md` |
 
-Before any Phase 3 work also read `slides/review_state.md` and `slides/storyboard.md`;
-add `slides/reviews/` and `slides/review-input/` when comments are involved.
+Phase 3 の経路では、§0 の `show-turn` が `review_state.md` と `storyboard.md` の必要部分を 1 回で出す。
+バッチ作成（対象が複数）は `show-ledger --batch bNNN` と、スライドごとの `show-slide` / `show-cf --for-slide`。
+コメントが絡む経路だけ `slides/reviews/` と `slides/review-input/` を加える。
+
+### 1b. 経路ごとに読むもの／読まないもの
+
+| 経路 | 読む | 読まない（必要な節だけ参照） |
+| --- | --- | --- |
+| Phase 3 chat review / FIX | `phase3-slide-review.md`、`show-turn`、対象の PNG、`slides/reviews/slide-NNN.md`（あれば） | `phase3-batch-build.md`（「発注文の契約」「発注文の上限」「指摘の反映」「離脱条件」の節だけ）、`phase4-*`、`state-schema.md`（書式を変えるときだけ） |
+| Phase 3 batch build | `phase3-batch-build.md`、`show-ledger`、対象ごとの `show-slide` と `show-cf --for-slide` | `phase3-slide-review.md`、`phase4-*`、`status-vocabulary.md`（未知のトークンが出たときだけ） |
+| Phase 3 PPTX comments | `phase3-pptx-comment-review.md`、コメントのある各スライドの `show-turn`、`slides/review-input/` | 上に同じ |
+| Phase 4 | `phase4-deck-final-review.md`、`## Progress` 全体 | Phase 3 の workflow |
+
+`reference/*.md` は末尾の表「Reference files」の「When to read」に当たるときだけ開く。
+`scripts/statekit.py` の**ソースは読まない** ─ 使い方は `reference/state-schema.md` の「statekit の使い方」1 画面か
+`--help`（UTF-8 で出る）。
 
 ## 2. Phase 3 sub-routing
 
@@ -180,6 +199,12 @@ Any read / edit / render / comment-extraction on a `.pptx` → use the **`pptx-t
   ledger rows in `review_state.md`, storyboard fields, `### Sources` rows, `source_index.md`
   appends, review-record appends. It asserts section boundaries and exactly-one match and keeps
   the file's line endings. `statekit.py next-id SRC` / `dupes` guard numbering.
+* **State files are read through `scripts/statekit.py show-*` too** (`show-turn` / `show-slide` /
+  `show-cf` / `show-ledger` / `show-progress` / `show-rules`): one call per turn, not a dozen
+  `cat` / `sed -n` slices. The usage sheet is in `reference/state-schema.md`; never read the script's
+  source to learn it.
+* **Do not re-read your own large tool outputs.** When a result was spilled to a file, `grep` the
+  lines you need once. A turn re-reading its own outputs cost 18 KB of context in measurement.
 * **Renumbering after a split goes through `scripts/renumber.py --insert-after N`** (dry-run first).
   It rewrites page references, prev/next links, chapter maps, appendix page lists, the progress
   table and carried-forward origins, and lists the hits on `APPROVED` slides separately so the user
@@ -216,7 +241,7 @@ do not fork the set wholesale.
 | `templates/` | creating any new record: storyboard entry, source, finding, review report, comment import, TASK.md |
 | `templates/scaffold/` | Phase 0 file templates (`{{SKILL_DIR}}` / `{{PROJECT_NAME}}` are substituted by `scripts/init_project.py`) |
 | `scripts/init_project.py` | Phase 0: create the tree, state-file stubs and the first deck |
-| `scripts/statekit.py` | any write to `review_state.md` / `storyboard.md` / `source_index.md` / `slides/reviews/`; `next-id`, `dupes` |
+| `scripts/statekit.py` | any read (`show-turn` and friends, §0) or write to `review_state.md` / `storyboard.md` / `source_index.md` / `slides/reviews/`; `next-id`, `dupes`. Usage sheet: `reference/state-schema.md` |
 | `scripts/renumber.py` | a split or insertion changed slide numbers |
 | `pptx-toolkit` `templates/presets/` | `dark` / `light` colour presets — the starting point for a new project |
 

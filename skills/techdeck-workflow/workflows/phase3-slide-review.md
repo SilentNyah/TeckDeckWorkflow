@@ -11,11 +11,16 @@
 次を確認する。
 
 * ユーザーの最新フィードバック
-* `slides/review_state.md`
-* 対象スライドのStoryboard
-* 対象スライドのレビュー用PDFまたは画像
-* 関連する調査結果、出典、図、コード
-* 過去のレビュー記録
+* `python scripts/statekit.py show-turn slides/review_state.md slides/storyboard.md --slide N`
+  （`## Rules`・Progress 行・台帳行・圧縮した横断ルール・storyboard の節を **1 回**で出す。
+  複数枚ならスライドごとに 1 回。`review_state.md` / `storyboard.md` を `sed` / `head` で部分読みしない）
+* 対象スライドのレビュー用 PNG（`output/png/slide-N.png`）
+* `slides/reviews/slide-NNN.md`（あれば。過去のレビュー記録）
+* 出典・図・コードは storyboard の節の `### Sources` / `### Diagram` / `### Code` が指すものだけ
+
+**読まないもの**: `phase3-batch-build.md` は「発注文の契約」「発注文の上限」「指摘の反映」「離脱条件」の
+節だけを参照する。`phase4-deck-final-review.md` は読まない。`reference/state-schema.md` は書式を
+変えるときだけ（statekit の使い方はその「1 画面」で足りる）。
 
 ## Procedure
 
@@ -33,6 +38,8 @@
    他スライドの作業中に見つけた承認済みスライドの不整合は、修正せず
    `## Approved slide change requests` に `ASC-NNN` で積む（`reference/state-schema.md`）。
 5. 指名されたスライドだけを修正する。
+   ビルダー・レビュー担当への発注は `phase3-batch-build.md` の「発注文の契約」「発注文の上限」に従う
+   （`CARRIED` は `show-cf --for-slide` の出力、`PRIOR` はレビュー記録のパス）。
    フィードバックに答えて**オーケストレータが文を書く**ときは、`phase3-batch-build.md` の
    「指摘の反映」に従う（`### Spec changes` の 6 点検、字数に収めるために詰めた文は差分レビューへ）。
 6. 図を修正した場合は編集可能ソースも更新する。
@@ -73,7 +80,7 @@
 
 ## Completion
 
-次を報告する。
+次を報告する。**下の項目だけを箇条書きで、1 項目 3 行まで**（長い一覧はレビュー記録に書いてパスを示す）。
 
 * 修正対象
 * ユーザーのフィードバック
