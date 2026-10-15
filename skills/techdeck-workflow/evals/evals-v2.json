@@ -1,0 +1,83 @@
+{
+  "skill_name": "techdeck-workflow",
+  "purpose": "iteration-2 (PRD v2): same scenarios; S3/S4 dispatches follow the revised contract (CARRIED = statekit show-cf --for-slide output via {{CARRIED_CF:30}}, PRIOR = path of slides/reviews/slide-030.md). S0/S1 prompts unchanged (the orchestrator's own reading/dispatching is what changes).",
+  "fixture": {
+    "source": "D:/documents/android/architecture",
+    "slides": [
+      29,
+      30,
+      31
+    ],
+    "png_dir": "output/png-final",
+    "extra_files_dir": "(fixture-v2: evals/files composed into slides/reviews/slide-030.md)"
+  },
+  "evals": [
+    {
+      "id": 0,
+      "name": "S0-turn-start",
+      "agent": null,
+      "max_turns": 60,
+      "prompt_file": "prompts/S0-turn-start.md",
+      "prompt": "Orchestrator turn start on a raw user instruction (fix Slide 030 per Phase 4 findings): route, read state, prepare the builder dispatch, stop before dispatching.",
+      "expected_output": "Routes to workflows/phase3-slide-review.md, names Slide 030, lists only the applicable carried-forward rules, states the review_state update, and returns a key/value builder dispatch without transcribing source text.",
+      "assertions": [
+        "Output names workflows/phase3-slide-review.md as the chosen route",
+        "Output contains a builder dispatch with the contract keys PROJECT_ROOT, MODE, SLIDE, STORYBOARD, SOURCES and CARRIED",
+        "No builder or reviewer agent was launched (no Agent/Task tool use in the transcript)",
+        "No slides/deck.pptx was created in the run copy",
+        "The dispatch does not transcribe source verbatims (none of the known SRC-002/003/006/028 quote fragments appear)"
+      ]
+    },
+    {
+      "id": 1,
+      "name": "S1-reviewer-dispatch",
+      "agent": null,
+      "max_turns": 60,
+      "prompt_file": "prompts/S1-reviewer-dispatch.md",
+      "prompt": "Orchestrator writes the iteration-2 dispatch for techdeck-slide-reviewer on Slide 030 (same shape as the 2026-10-13 pressure test S1).",
+      "expected_output": "A self-contained key/value dispatch (MODE, PROJECT_ROOT, SLIDE, PNG, STORYBOARD, SOURCES, RUBRIC, VISUAL, CARRIED, PRIOR, ITERATION) that references the index instead of quoting source text and does not summarise the builder's claims as facts.",
+      "assertions": [
+        "Dispatch contains the reviewer contract keys MODE, PROJECT_ROOT, SLIDE, PNG, STORYBOARD, SOURCES, RUBRIC, VISUAL, CARRIED, PRIOR and ITERATION",
+        "The dispatch does not transcribe source verbatims (none of the known SRC-002/003/006/028 quote fragments appear)",
+        "The dispatch passes the review-rubric path (review-rubric.md) and the visual-design path (visual-design.md)",
+        "The dispatch does not instruct the reviewer to approve (no 'APPROVED にして' / 'approve the slide' instruction)"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "S3-builder-fix",
+      "agent": "techdeck-slide-builder",
+      "max_turns": 60,
+      "prompt_file": "prompts/S3-builder-fix.v2.md",
+      "prompt": "Builder FIX, iteration 2, Slide 030, three prior findings, carried-forward rules inline, no deck available (describe the BUILD RESULT).",
+      "expected_output": "A single ## BUILD RESULT block with a disposition for each of FINDING-001..003, Character count with 'Not counted', Deviations from spec, Fit, Impact, Points requiring user confirmation, Progress file; FINDING-001 is not pushed back.",
+      "assertions": [
+        "Response begins with a ## BUILD RESULT block",
+        "Finding dispositions table has one row for each of FINDING-001, FINDING-002 and FINDING-003 with a disposition in {FIXED, PUSHED_BACK, PARTIAL, NEEDS_USER}",
+        "FINDING-001 (lifecycle-aware collection missing) is not PUSHED_BACK",
+        "### Character count section present with a 'Not counted' list",
+        "### Deviations from spec section present",
+        "### Progress file section present",
+        "Response does not declare the slide APPROVED"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "S4-reviewer-slide",
+      "agent": "techdeck-slide-reviewer",
+      "max_turns": 60,
+      "prompt_file": "prompts/S4-reviewer-slide.v2.md",
+      "prompt": "Reviewer MODE: slide, iteration 2, Slide 030 with rendered PNG, prior findings plus builder dispositions, carried-forward rules inline, no deck available.",
+      "expected_output": "A single ## REVIEW RESULT block with the header lines, a status for each prior finding, any new findings with Severity/Category/Rubric/Status, and ### R6 notes; verdict from the review namespace only.",
+      "assertions": [
+        "Response begins with a ## REVIEW RESULT block",
+        "Header lines present: Slide, Iteration, Overall result, Counts, Rubric items failed, 3-second takeaway, Cold-read summary, Body chars",
+        "Overall result is one of PASS, PASS_WITH_MINOR_FIXES, REVISION_REQUIRED, BLOCKED",
+        "Each of FINDING-001, FINDING-002 and FINDING-003 is addressed with a Status line",
+        "Every new finding section has Severity, Category, Rubric and Status lines; prior findings (001-003) at least a Status line",
+        "### R6 notes section present",
+        "Verdict is not BLOCKED and APPROVED is never emitted as a verdict"
+      ]
+    }
+  ]
+}

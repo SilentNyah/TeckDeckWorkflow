@@ -1,2 +1,5 @@
 __pycache__/
 *.pyc
+
+# benchmark workspace (tools/bench): per-run project copies, transcripts, results
+skills/techdeck-workflow-workspace/
